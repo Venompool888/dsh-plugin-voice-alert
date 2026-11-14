@@ -17,14 +17,20 @@
    （需要本机能访问 GitHub；访问不了的话，到 [Releases](https://github.com/Venompool888/dsh-plugin-voice-alert/releases) 下载 `.tgz`，解压后把文件夹路径填进去。）
 3. 按 **⌘Q 完全退出 DSH**，再重新打开。设置侧栏里会出现「语音」。
 
-装好就能用，不用另外配置。打开「设置 → 语音」，在「试一试」里输入一句话点「朗读」，能听到声音就说明装好了。
+也可以用命令行安装（桌面版用 `desktop` profile，网页版用 `web`）：
+
+```bash
+dsh plugin --profile desktop add github:Venompool888/dsh-plugin-voice-alert
+```
+
+装好就能出声：没有可用的云端凭据时自动用 macOS 本地语音。打开「设置 → 语音」，在「试一试」里输入一句话点「朗读」，能听到声音就说明装好了。
 
 ### 功能
 
 - **等你批准时自动出声**：念「来自 DSH，某某项目需要你批准」。插件只负责念，不会替你批准。
 - **AI 自己判断要不要喊**：插件注册了一个 `voice-alert` skill，遇到验证码、长任务结束、卡住需要你拍板时，AI 会调用它。
 - **两种声音**：
-  - DeepSeek 云端语音（默认）：用 DSH 已登录的 DeepSeek 账号；账号用不了时，可以填自己的 API key。
+  - DeepSeek 云端语音（默认）：先试 DSH 已登录的 DeepSeek 账号，再用你填的 API key。目前 DeepSeek 的语音接口还不接受账号凭据，所以实际需要 API key；设置页会提示当前用的是哪个。
   - macOS 本地语音：系统自带，不联网、不花钱。云端失败时自动改用本地语音。
 - **10 种播报语言**：中文、English、日本語、한국어、Français、Deutsch、Español、Português、Italiano、Русский。
 - **待命模式**：跟 AI 说「我去吃饭了」「帮我盯着」，长任务结束也会喊；说「我回来了」就只在需要你动手时喊。
@@ -71,13 +77,19 @@ A voice-alert plugin for DeepSeek Harness (DSH). When you're away from the scree
    (If GitHub isn't reachable, download the `.tgz` from [Releases](https://github.com/Venompool888/dsh-plugin-voice-alert/releases), unpack it, and enter the folder path instead.)
 3. **Quit DSH completely (⌘Q)** and reopen it. A **Voice** page appears in the Settings sidebar.
 
-It works right away. In **Settings → Voice**, type a sentence under **Try it** and click **Read aloud** to check.
+Or install from the command line (`desktop` profile for the desktop app, `web` for the web UI):
+
+```bash
+dsh plugin --profile desktop add github:Venompool888/dsh-plugin-voice-alert
+```
+
+It speaks right away: with no cloud credential it uses the macOS local voice. In **Settings → Voice**, type a sentence under **Try it** and click **Read aloud** to check.
 
 ### Features
 
 - **Speaks when approval is needed.** It only announces; it never approves anything for you.
 - **A `voice-alert` skill**, so the AI can speak up for verification codes, finished long tasks, or when it's stuck.
-- **Two voices:** DeepSeek cloud voice (default, uses your signed-in DSH DeepSeek account, or your own API key) and the macOS local voice (offline, free, used automatically if the cloud fails).
+- **Two voices:** DeepSeek cloud voice (default; tries your signed-in DSH account, then your API key — DeepSeek's speech endpoint currently rejects account credentials, so in practice an API key is needed) and the macOS local voice (offline, free, used automatically if the cloud fails).
 - **10 spoken languages.** **Away mode** for announcing finished tasks while you're gone.
 
 ### Requirements
