@@ -301,7 +301,15 @@ function parseSkill() {
   const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
   const front = m ? m[1] : ''
   const description = (front.match(/^description:\s*(.+)$/m) || [])[1]?.trim() ?? 'Voice alerts'
-  return { name: 'voice-alert', description, content: (m ? m[2] : raw).trim() }
+  // source 必填：DSH 注册时不检查，AI 加载 skill 时才报「source must be a string」
+  return {
+    name: 'voice-alert',
+    description,
+    content: (m ? m[2] : raw).trim(),
+    source: 'bundled',
+    invocation: { modelInvocable: true, userInvocable: true },
+    resourceBase: { kind: 'directory', path: fileURLToPath(new URL('./skills/voice-alert/', import.meta.url)) },
+  }
 }
 
 function projectOf(session) {

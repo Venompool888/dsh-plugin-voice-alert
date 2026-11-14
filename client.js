@@ -6,7 +6,7 @@
   const SECTION_ID = "voice-alert";
   const RPC_CHANNEL = "/voice-alert";
   // 和 package.json 的 version 保持一致；后台 config.get 回报的 hostVersion 对不上就提示重启
-  const VERSION = "1.0.0";
+  const VERSION = "1.0.1";
 
   const zh = {
     voice: "语音",
