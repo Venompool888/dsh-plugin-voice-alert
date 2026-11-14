@@ -12,6 +12,7 @@
  */
 import { execFile, spawn } from 'node:child_process'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -26,9 +27,15 @@ const CONFIG_JSON = `${STATE}/config.json`
 const CONFIG_ENV = `${STATE}/config.env`
 const WATCH_FILE = `${STATE}/watch`
 const RPC_CHANNEL = '/voice-alert'
-const KEY_FILE = `${HOME}/.dsh/secrets/deepseek.key`
-const TOKEN_FILE = `${STATE}/account.token`
-const TTS_URL = 'https://api.deepseek.com/v1/tools/tts'
+// 语音合成服务商：official = DeepSeek 官方（只填 key）；custom = 第三方兼容服务（填 base URL + key）
+// 两种 key 分开存，切换服务商不会丢
+const KEY_FILES = { official: `${HOME}/.dsh/secrets/deepseek.key`, custom: `${HOME}/.dsh/secrets/voice-alert-custom.key` }
+// DSH「模型」里配置的 DeepSeek API key（凭据引用 DEEPSEEK_API_KEY）。只读不写：写进去会改变 DSH 自己的计费方式。
+// Claude Code / Codex 调脚本时拿不到 DSH 的凭据服务，所以同步一份到 600 文件，DSH 那边删了 key 这里也删
+const DSH_KEY_REF = 'DEEPSEEK_API_KEY'
+const DSH_KEY_FILE = `${STATE}/dsh-deepseek.key`
+// 旧版把 DSH 账号 token 同步到这里；DeepSeek 语音接口不接受账号凭据，已弃用，启动时清掉
+const LEGACY_TOKEN_FILE = `${STATE}/account.token`
 const IS_MAC = process.platform === 'darwin'
 const LANGS = ['zh', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'it', 'ru']
 const BUNDLED_SCRIPT = fileURLToPath(new URL('./bin/voice-alert', import.meta.url))
@@ -42,11 +49,11 @@ let lastTestAt = 0
 const NODE_PATH = !process.versions.electron ? process.execPath : (existsSync(RUNTIME_NODE) ? RUNTIME_NODE : '')
 
 const DEFAULTS = {
-  engine: 'deepseek', auth: 'account', voiceId: 'stella', sayVoice: '', lang: 'zh', rate: 185,
+  engine: 'deepseek', provider: 'official', baseUrl: '', voiceId: 'stella', sayVoice: '', lang: 'zh', rate: 185,
   autoVolume: true, chime: true, banner: true, dedupe: 20, approval: true, watchHours: 4,
 }
 const ENV_KEYS = {
-  engine: 'VA_CFG_ENGINE', auth: 'VA_CFG_AUTH', voiceId: 'VA_CFG_VOICE_ID', sayVoice: 'VA_CFG_SAY_VOICE', lang: 'VA_CFG_LANG',
+  engine: 'VA_CFG_ENGINE', provider: 'VA_CFG_PROVIDER', baseUrl: 'VA_CFG_BASE_URL', voiceId: 'VA_CFG_VOICE_ID', sayVoice: 'VA_CFG_SAY_VOICE', lang: 'VA_CFG_LANG',
   rate: 'VA_CFG_RATE', autoVolume: 'VA_CFG_AUTO_VOLUME', chime: 'VA_CFG_CHIME', banner: 'VA_CFG_BANNER',
   dedupe: 'VA_CFG_DEDUPE', approval: 'VA_CFG_APPROVAL', watchHours: 'VA_CFG_WATCH_HOURS',
 }
@@ -63,7 +70,8 @@ const oneOf = (v, list, d) => (list.includes(v) ? v : d)
 function sanitize(c) {
   return {
     engine: oneOf(c.engine, ['deepseek', 'say'], DEFAULTS.engine),
-    auth: oneOf(c.auth, ['account', 'api-key'], DEFAULTS.auth),
+    provider: oneOf(c.provider, ['official', 'custom'], DEFAULTS.provider),
+    baseUrl: cleanBaseUrl(c.baseUrl),
     voiceId: oneOf(c.voiceId, ['stella', 'tide'], DEFAULTS.voiceId),
     sayVoice: typeof c.sayVoice === 'string' && /^[\w ().'-]{0,80}$/.test(c.sayVoice) ? c.sayVoice : '',
     lang: oneOf(c.lang, LANGS, DEFAULTS.lang),
@@ -75,6 +83,18 @@ function sanitize(c) {
     approval: c.approval !== false,
     watchHours: int(c.watchHours, 1, 12, DEFAULTS.watchHours),
   }
+}
+
+// 第三方 base URL：只收 http(s)，不许带账号密码，去掉末尾的 /
+function cleanBaseUrl(v) {
+  if (typeof v !== 'string') return ''
+  const t = v.trim().replace(/\/+$/, '')
+  if (t === '' || t.length > 300) return ''
+  try {
+    const u = new URL(t)
+    if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) return ''
+    return t
+  } catch { return '' }
 }
 
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
@@ -112,45 +132,86 @@ function installScript(logger) {
   }
 }
 
-// 把 DSH 已登录 DeepSeek 账号的 token 同步到 600 文件，Claude Code / Codex 调脚本时也能用账号付费。
-// 只在 DSH 允许发往 api.deepseek.com 时拿得到；退出登录后删除文件。
-async function syncAccountToken(ctx) {
-  let token
-  try { token = await ctx.get('deepseekAccount')?.resolveToken(TTS_URL) } catch { token = undefined }
+function keyIn(file) {
+  try { return readFileSync(file, 'utf8').split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#')) || '' } catch { return '' }
+}
+// 只露前缀和最后 4 位，跟 DSH 自己的 masked 预览一个意思
+const mask = (k) => (k.length <= 8 ? '••••' : `${k.startsWith('sk-') ? 'sk-' : ''}…${k.slice(-4)}`)
+
+async function dshKeyInfo(ctx) {
+  try { const info = await ctx.get('credentials')?.describe(DSH_KEY_REF); return info?.configured ? { masked: info.masked || '' } : null } catch { return null }
+}
+
+async function syncDshKey(ctx) {
+  let value = ''
+  try { value = (await ctx.get('credentials')?.resolve(DSH_KEY_REF))?.value?.trim() || '' } catch {}
   try {
-    if (token) {
-      let have = ''
-      try { have = readFileSync(TOKEN_FILE, 'utf8').trim() } catch {}
-      if (have !== token) {
-        mkdirSync(STATE, { recursive: true })
-        writeFileSync(TOKEN_FILE + '.tmp', token + '\n', { mode: 0o600 })
-        renameSync(TOKEN_FILE + '.tmp', TOKEN_FILE)
-        chmodSync(TOKEN_FILE, 0o600)
-      }
-    } else {
-      rmSync(TOKEN_FILE, { force: true })
-    }
+    if (!value) { rmSync(DSH_KEY_FILE, { force: true }); return }
+    if (keyIn(DSH_KEY_FILE) === value) return
+    mkdirSync(STATE, { recursive: true })
+    writeFileSync(DSH_KEY_FILE + '.tmp', value + '\n', { mode: 0o600 })
+    renameSync(DSH_KEY_FILE + '.tmp', DSH_KEY_FILE)
+    chmodSync(DSH_KEY_FILE, 0o600)
   } catch {}
-  return !!token
 }
 
-// DeepSeek 语音合成是否接受账号付费：用空请求探一下（401 = 不接受），结果缓存 1 小时
-let accountProbe = { at: 0, value: 'unknown' }
-async function probeAccountTts() {
-  if (Date.now() - accountProbe.at < 3600_000) return accountProbe.value
-  let token = ''
-  try { token = readFileSync(TOKEN_FILE, 'utf8').trim() } catch {}
-  if (!token) return 'unknown'
+// 每个服务商实际会用哪个 key：own = 本页填的；dsh = DSH「模型」里的（只对官方）；null = 没有，用本地语音
+async function keyStatus(ctx) {
+  await syncDshKey(ctx)
+  const own = keyIn(KEY_FILES.official)
+  const dsh = own ? null : await dshKeyInfo(ctx)
+  const custom = keyIn(KEY_FILES.custom)
+  const base = readConfig().baseUrl
+  const ok = readVerified()
+  const officialKey = own || (dsh ? keyIn(DSH_KEY_FILE) : '')
+  return {
+    official: own || dsh
+      ? { source: own ? 'own' : 'dsh', masked: own ? mask(own) : dsh.masked, verified: !!officialKey && ok.official === fingerprint(officialKey, OFFICIAL_BASE) }
+      : { source: null },
+    custom: custom ? { source: 'own', masked: mask(custom), verified: !!base && ok.custom === fingerprint(custom, base) } : { source: null },
+  }
+}
+
+// ---------- 连接测试：用 key 真的合成一句很短的语音 ----------
+
+const OFFICIAL_BASE = 'https://api.deepseek.com'
+const VERIFIED_FILE = `${STATE}/verified.json`
+// 和 va-tts.mjs 的 ttsEndpoint 一致
+const ttsEndpoint = (base) => { const b = base.replace(/\/+$/, ''); return /\/v1$/.test(b) ? `${b}/tools/tts` : `${b}/v1/tools/tts` }
+// 记“哪把 key + 哪个地址测通过”，只存指纹，不存 key 本身
+const fingerprint = (key, base) => createHash('sha256').update(`${base}\n${key}`).digest('hex').slice(0, 24)
+function readVerified() { try { return JSON.parse(readFileSync(VERIFIED_FILE, 'utf8')) || {} } catch { return {} } }
+function writeVerified(provider, fp) {
+  const v = readVerified()
+  if (fp) v[provider] = fp; else delete v[provider]
+  try { mkdirSync(STATE, { recursive: true }); writeFileSync(VERIFIED_FILE, JSON.stringify(v), { mode: 0o600 }) } catch {}
+}
+
+const TEST_TEXT = { zh: '连接测试', en: 'Connection test', ja: '接続テスト', ko: '연결 테스트', fr: 'Test de connexion', de: 'Verbindungstest', es: 'Prueba de conexión', pt: 'Teste de conexão', it: 'Test di connessione', ru: 'Проверка связи' }
+
+// 结果：{ ok: true } 或 { ok: false, reason: 'auth' | 'http' | 'network' | 'timeout', status? }
+async function testKey(key, base, lang, voiceId) {
   try {
-    const r = await fetch(TTS_URL, { method: 'POST', headers: { 'x-dsh-auth-token': token, 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(8000) })
-    accountProbe = { at: Date.now(), value: r.status === 401 || r.status === 403 ? 'rejected' : 'ok' }
-  } catch { return 'unknown' }
-  return accountProbe.value
+    const r = await fetch(ttsEndpoint(base), {
+      method: 'POST',
+      signal: AbortSignal.timeout(15000),
+      headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: TEST_TEXT[lang] || TEST_TEXT.en, voice_id: voiceId, format: 'wav' }),
+    })
+    const body = Buffer.from(await r.arrayBuffer())
+    if (r.ok && body.length > 100) return { ok: true }
+    if (r.status === 401 || r.status === 403) return { ok: false, reason: 'auth', status: r.status }
+    return { ok: false, reason: 'http', status: r.status }
+  } catch (err) {
+    return { ok: false, reason: err?.name === 'TimeoutError' ? 'timeout' : 'network' }
+  }
 }
 
-function hasKey() {
-  if ((process.env.DEEPSEEK_API_KEY || '').trim()) return true
-  try { return readFileSync(KEY_FILE, 'utf8').split('\n').some((l) => l.trim() && !l.trim().startsWith('#')) } catch { return false }
+function saveKeyFile(file, key) {
+  mkdirSync(`${HOME}/.dsh/secrets`, { recursive: true, mode: 0o700 })
+  writeFileSync(file + '.tmp', key + '\n', { mode: 0o600 })
+  renameSync(file + '.tmp', file)
+  chmodSync(file, 0o600)
 }
 
 function watchState() {
@@ -188,19 +249,33 @@ function run(args, wait) {
 
 async function dispatch(ctx, endpoint, payload) {
   if (endpoint === 'config.get') {
-    const signedIn = await syncAccountToken(ctx)
-    const accountTts = signedIn ? await probeAccountTts() : 'unknown'
-    return { ok: true, value: { config: readConfig(), watch: watchState(), voices: IS_MAC ? await listVoices() : [], platform: process.platform, hasKey: hasKey(), signedIn, accountTts, hostVersion: HOST_VERSION } }
+    return { ok: true, value: { config: readConfig(), watch: watchState(), voices: IS_MAC ? await listVoices() : [], platform: process.platform, keys: await keyStatus(ctx), hostVersion: HOST_VERSION } }
   }
   if (endpoint === 'key.set') {
+    const file = KEY_FILES[payload?.provider === 'custom' ? 'custom' : 'official']
     const key = typeof payload?.key === 'string' ? payload.key.trim() : ''
-    if (key === '') { rmSync(KEY_FILE, { force: true }); return { ok: true, value: { hasKey: hasKey() } } }
+    if (key === '') { rmSync(file, { force: true }); return { ok: true, value: { keys: await keyStatus(ctx) } } }
     if (!/^\S{10,300}$/.test(key)) return { ok: false, error: { code: 'voice/bad-key' } }
-    mkdirSync(`${HOME}/.dsh/secrets`, { recursive: true, mode: 0o700 })
-    writeFileSync(KEY_FILE + '.tmp', key + '\n', { mode: 0o600 })
-    renameSync(KEY_FILE + '.tmp', KEY_FILE)
-    chmodSync(KEY_FILE, 0o600)
-    return { ok: true, value: { hasKey: true } }
+    saveKeyFile(file, key)
+    return { ok: true, value: { keys: await keyStatus(ctx) } }
+  }
+  if (endpoint === 'key.verify') {
+    // 带 key：先测，测通了才保存；不带 key：测当前正在用的那把
+    const provider = payload?.provider === 'custom' ? 'custom' : 'official'
+    const c = readConfig()
+    const base = provider === 'custom' ? c.baseUrl : OFFICIAL_BASE
+    const candidate = typeof payload?.key === 'string' ? payload.key.trim() : ''
+    if (!base) return { ok: true, value: { result: { ok: false, reason: 'no-base' }, keys: await keyStatus(ctx) } }
+    if (candidate && !/^\S{10,300}$/.test(candidate)) return { ok: true, value: { result: { ok: false, reason: 'format' }, keys: await keyStatus(ctx) } }
+    await syncDshKey(ctx)
+    const key = candidate || keyIn(KEY_FILES[provider]) || (provider === 'official' ? keyIn(DSH_KEY_FILE) : '')
+    if (!key) return { ok: true, value: { result: { ok: false, reason: 'no-key' }, keys: await keyStatus(ctx) } }
+    const result = await testKey(key, base, c.lang, c.voiceId)
+    if (result.ok) {
+      if (candidate) saveKeyFile(KEY_FILES[provider], candidate)
+      writeVerified(provider, fingerprint(key, base))
+    } else if (!candidate) writeVerified(provider, null)
+    return { ok: true, value: { result, keys: await keyStatus(ctx) } }
   }
   if (endpoint === 'config.set') {
     const next = sanitize({ ...readConfig(), ...(payload && typeof payload === 'object' ? payload : {}) })
@@ -325,10 +400,9 @@ export function apply(ctx) {
 
   ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: RPC_CHANNEL, handler: createRoute(ctx, ctx.connection) }))
 
-  // 账号 token 会轮换：启动时同步一次，之后每 20 分钟一次
-  syncAccountToken(ctx)
-  ctx.effect(() => { const id = setInterval(() => { syncAccountToken(ctx) }, 20 * 60 * 1000); id.unref?.(); return () => clearInterval(id) })
-  ctx.on('deepseek-account/session-expired', () => { rmSync(TOKEN_FILE, { force: true }) })
+  rmSync(LEGACY_TOKEN_FILE, { force: true })
+  syncDshKey(ctx)
+  ctx.on('credentials/reference-updated', (ref) => { if (String(ref) === DSH_KEY_REF) syncDshKey(ctx) })
 
   ctx.on('session/event', (session, event) => {
     if (event?.type !== 'approval/asked') return

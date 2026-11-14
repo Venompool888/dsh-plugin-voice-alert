@@ -30,7 +30,10 @@ dsh plugin --profile desktop add github:Venompool888/dsh-plugin-voice-alert
 - **等你批准时自动出声**：念「来自 DSH，某某项目需要你批准」。插件只负责念，不会替你批准。
 - **AI 自己判断要不要喊**：插件注册了一个 `voice-alert` skill，遇到验证码、长任务结束、卡住需要你拍板时，AI 会调用它。
 - **两种声音**：
-  - DeepSeek 云端语音（默认）：先试 DSH 已登录的 DeepSeek 账号，再用你填的 API key。目前 DeepSeek 的语音接口还不接受账号凭据，所以实际需要 API key；设置页会提示当前用的是哪个。
+  - DeepSeek 云端语音（默认），在「语音 → DeepSeek 语音」里选服务商：
+    - **DeepSeek 官方**：只需要一个 API key（在 [platform.deepseek.com](https://platform.deepseek.com) 创建）。如果你已经在 DSH「设置 → 模型」里配置了 DeepSeek key，会自动用它，什么都不用填；页面上会显示正在用哪个 key。
+    - **第三方**：兼容 DeepSeek 语音接口的服务，填它的 base URL 和 key。请求发到 `<base URL>/v1/tools/tts`（base URL 以 `/v1` 结尾时是 `<base URL>/tools/tts`）。
+    - 注意：DSH 的账号登录不能用于语音合成，DeepSeek 的语音接口只认 API key。
   - macOS 本地语音：系统自带，不联网、不花钱。云端失败时自动改用本地语音。
 - **10 种播报语言**：中文、English、日本語、한국어、Français、Deutsch、Español、Português、Italiano、Русский。
 - **待命模式**：跟 AI 说「我去吃饭了」「帮我盯着」，长任务结束也会喊；说「我回来了」就只在需要你动手时喊。
@@ -43,9 +46,9 @@ dsh plugin --profile desktop add github:Venompool888/dsh-plugin-voice-alert
 
 ### 隐私
 
-- 所有设置都存在本机 `~/.dsh/state/voice-alert/`。
-- 账号 token 和 API key 只保存在本机（权限 600），只发给 DeepSeek 的语音接口，设置页不显示明文。
-- 卸载插件不会删除这些文件；不想要了可以手动删掉上面这个目录和 `~/.dsh/secrets/deepseek.key`。
+- 所有设置都在「设置 → 语音」页里完成，不需要改任何文件。
+- API key 只保存在本机、只有你自己能读，只发给你选的那个服务商；页面上只显示末 4 位。
+- 插件只读取 DSH「模型」里的 DeepSeek key，不会修改它。
 
 ### 升级
 
@@ -89,7 +92,7 @@ It speaks right away: with no cloud credential it uses the macOS local voice. In
 
 - **Speaks when approval is needed.** It only announces; it never approves anything for you.
 - **A `voice-alert` skill**, so the AI can speak up for verification codes, finished long tasks, or when it's stuck.
-- **Two voices:** DeepSeek cloud voice (default; tries your signed-in DSH account, then your API key — DeepSeek's speech endpoint currently rejects account credentials, so in practice an API key is needed) and the macOS local voice (offline, free, used automatically if the cloud fails).
+- **Two voices:** DeepSeek cloud voice (default — pick a provider: **DeepSeek official** needs only an API key from platform.deepseek.com, and reuses the DeepSeek key already set in DSH Settings → Models if there is one; **Third-party** takes the base URL and key of a DeepSeek-compatible service, called at `<base URL>/v1/tools/tts`. Signing in to DSH does not cover speech: DeepSeek's speech endpoint only accepts API keys) and the macOS local voice (offline, free, used automatically if the cloud fails).
 - **10 spoken languages.** **Away mode** for announcing finished tasks while you're gone.
 
 ### Requirements
@@ -98,7 +101,7 @@ macOS for playback. On Windows and Linux the settings page opens, but nothing is
 
 ### Privacy
 
-Settings live in `~/.dsh/state/voice-alert/`. The account token and API key stay on your Mac (mode 600) and are sent only to DeepSeek's speech endpoint.
+Everything is configured on the Settings → Voice page; no files to edit. API keys stay on your Mac, readable only by you, and are sent only to the provider you chose; the page shows just the last 4 characters. The DeepSeek key from DSH Models is read, never changed.
 
 ### License
 

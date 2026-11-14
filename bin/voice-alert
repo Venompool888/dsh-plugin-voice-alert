@@ -23,9 +23,11 @@ APPROVAL_ON="${VA_CFG_APPROVAL:-1}"
 NODE_BIN="${VA_CFG_NODE:-$(command -v node 2>/dev/null)}"
 TTS_JS="${VA_CFG_TTS:-}"
 # 鉴权：account = DSH 已登录的 DeepSeek 账号（插件同步 token），api-key = 自定义 key
-AUTH="${VA_CFG_AUTH:-account}"
-TOKEN_FILE="$STATE/account.token"
-KEY_FILE="$HOME/.dsh/secrets/deepseek.key"
+# 语音合成服务商：official = DeepSeek 官方（只要 key）；custom = 第三方兼容服务（base URL + key）
+PROVIDER="${VA_CFG_PROVIDER:-official}"
+BASE_URL="${VA_CFG_BASE_URL:-}"
+if [ "$PROVIDER" = "custom" ]; then KEY_FILE="$HOME/.dsh/secrets/voice-alert-custom.key"
+else KEY_FILE="$HOME/.dsh/secrets/deepseek.key"; fi
 CACHE="$STATE/cache"
 SOUNDS="/System/Library/Sounds"
 STARTED=$(date +%s)
@@ -312,8 +314,8 @@ release_lock() { rm -rf "$LOCK" 2>/dev/null; }
 chime() { [ -f "$SOUNDS/$1.aiff" ] && afplay -v 1.2 "$SOUNDS/$1.aiff" 2>/dev/null; }
 
 has_key() {
-  if [ "$AUTH" = "api-key" ]; then [ -n "${DEEPSEEK_API_KEY:-}" ] || [ -s "$KEY_FILE" ]
-  else [ -s "$TOKEN_FILE" ] || [ -n "${DEEPSEEK_API_KEY:-}" ] || [ -s "$KEY_FILE" ]; fi
+  if [ "$PROVIDER" = "custom" ]; then [ -n "$BASE_URL" ] && [ -s "$KEY_FILE" ]
+  else [ -s "$KEY_FILE" ] || [ -s "$STATE/dsh-deepseek.key" ]; fi
 }
 
 # 缓存只留最近 60 条，重复的「完成了」不用每次重新合成
@@ -322,7 +324,7 @@ trim_cache() {
 }
 
 can_cloud() { [ -n "$TTS_JS" ] && [ -f "$TTS_JS" ] && [ -x "$NODE_BIN" ]; }
-tts_to() { printf '%s' "$1" | "$NODE_BIN" "$TTS_JS" "$VOICE_ID" "$2" "$AUTH" >/dev/null 2>&1; }
+tts_to() { printf '%s' "$1" | "$NODE_BIN" "$TTS_JS" "$VOICE_ID" "$2" "$PROVIDER" "$BASE_URL" >/dev/null 2>&1; }
 
 # 合成一句到缓存，成功时打印文件路径
 synth_file() {
@@ -471,7 +473,7 @@ case "$1" in
   doctor)
     echo "macOS : $(sw_vers -productVersion 2>/dev/null)  $(uname -m)"
     echo "script: $0"
-    echo "engine: $ENGINE    voice: $VOICE_ID  auth: $AUTH ($(has_key && echo 可用 || echo 无凭据))"
+    echo "engine: $ENGINE    voice: $VOICE_ID  provider: $PROVIDER${BASE_URL:+ ($BASE_URL)} ($(has_key && echo 有 key || echo 没填 key，用本地语音))"
     echo "say   : $(voice_label "$(detect_voice)")（本地兜底）"
     echo "audio : $(osascript -e 'output volume of (get volume settings)' 2>/dev/null) / muted $(osascript -e 'output muted of (get volume settings)' 2>/dev/null)"
     echo "中文音色:"

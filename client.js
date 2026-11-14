@@ -6,7 +6,7 @@
   const SECTION_ID = "voice-alert";
   const RPC_CHANNEL = "/voice-alert";
   // 和 package.json 的 version 保持一致；后台 config.get 回报的 hostVersion 对不上就提示重启
-  const VERSION = "1.0.1";
+  const VERSION = "1.2.0";
 
   const zh = {
     voice: "语音",
@@ -23,20 +23,40 @@
     "tab.deepseek": "DeepSeek 语音",
     "tab.local": "本地语音",
     "tab.active": "使用中",
-    auth: "付费方式",
-    "auth.account": "DSH 登录账号",
-    "auth.key": "自定义 API key",
-    "auth.account.ok": "用 DSH 已登录的 DeepSeek 账号，不用另外填 key。",
-    "auth.account.no": "DSH 还没登录 DeepSeek 账号，会改用本地语音。",
-    "auth.account.fallback": "DeepSeek 语音合成暂不接受账号付费，已自动改用你的 API key。",
-    "auth.account.nokey": "DeepSeek 语音合成暂不接受账号付费。填一个自定义 API key 才能用云端声音，否则用本地语音。",
+    provider: "服务商",
+    "provider.official": "DeepSeek 官方",
+    "provider.custom": "第三方",
+    "provider.official.hint": "只需要一个 DeepSeek API key（在 platform.deepseek.com 创建）。",
+    "provider.custom.hint": "兼容 DeepSeek 语音接口的第三方服务，要填它的 base URL 和 key。",
+    baseUrl: "Base URL",
+    "baseUrl.placeholder": "https://example.com",
+    "baseUrl.hint": "请求地址：{0}",
+    "baseUrl.need": "还没填 base URL，会用 Mac 本地语音。",
+    "baseUrl.bad": "地址要以 http:// 或 https:// 开头。",
     key: "API key",
-    "key.set": "已设置，云端语音可用。",
-    "key.unset": "未设置，会使用系统本地语音。",
+    "key.src.own": "本页保存",
+    "key.src.dsh": "来自 DSH「设置 → 模型」",
+    "key.ok": "已连接",
+    "key.unverified": "未测试",
+    "key.none.official": "还没有 key，会用 Mac 本地语音。填一个 DeepSeek API key，或在 DSH「设置 → 模型」里配置。",
+    "key.none.custom": "还没有 key，会用 Mac 本地语音。",
     "key.placeholder": "粘贴 sk-…",
-    "key.save": "保存",
+    "key.saveTest": "保存并测试",
+    "key.testing": "正在测试…",
+    "key.test": "测试连接",
+    "key.change": "更换",
+    "key.cancel": "取消",
     "key.clear": "清除",
-    "key.bad": "key 格式不对。",
+    "key.clear.confirm": "再点一次确认清除",
+    "key.toast.ok": "密钥正确，已成功连接",
+    "key.err.auth": "密钥不对（{0}），没有保存。请检查后重新粘贴。",
+    "key.err.http": "服务返回错误（{0}），没有保存。",
+    "key.err.network": "连不上服务，请检查网络后重试。",
+    "key.err.timeout": "服务 15 秒没响应，请稍后重试。",
+    "key.err.format": "这不像一个 key，请检查后重新粘贴。",
+    "key.err.noBase": "先在上面填 Base URL。",
+    "key.err.noKey": "还没有可以测试的 key。",
+    "key.err.test.auth": "这个 key 已经不能用了（{0}），请更换。",
     "sec.try": "试一试",
     "try.placeholder": "输入一段文字，用当前设置朗读",
     "try.play": "朗读",
@@ -92,20 +112,40 @@
     "tab.deepseek": "DeepSeek voice",
     "tab.local": "Local voice",
     "tab.active": "In use",
-    auth: "Billing",
-    "auth.account": "DSH account",
-    "auth.key": "Custom API key",
-    "auth.account.ok": "Uses the DeepSeek account signed in to DSH — no key needed.",
-    "auth.account.no": "DSH isn't signed in to DeepSeek; the local voice will be used.",
-    "auth.account.fallback": "DeepSeek speech doesn't accept account billing yet, so your API key is used automatically.",
-    "auth.account.nokey": "DeepSeek speech doesn't accept account billing yet. Add a custom API key for cloud voices; otherwise the local voice is used.",
+    provider: "Provider",
+    "provider.official": "DeepSeek official",
+    "provider.custom": "Third-party",
+    "provider.official.hint": "Only needs a DeepSeek API key (create one at platform.deepseek.com).",
+    "provider.custom.hint": "A third-party service compatible with DeepSeek's speech API — needs its base URL and key.",
+    baseUrl: "Base URL",
+    "baseUrl.placeholder": "https://example.com",
+    "baseUrl.hint": "Requests go to {0}",
+    "baseUrl.need": "No base URL yet — the Mac's local voice will be used.",
+    "baseUrl.bad": "The address must start with http:// or https://.",
     key: "API key",
-    "key.set": "Set — cloud voices available.",
-    "key.unset": "Not set — the system voice will be used.",
+    "key.src.own": "Saved here",
+    "key.src.dsh": "From DSH Settings → Models",
+    "key.ok": "Connected",
+    "key.unverified": "Not tested",
+    "key.none.official": "No key yet — the Mac's local voice will be used. Add a DeepSeek API key, or configure one in DSH Settings → Models.",
+    "key.none.custom": "No key yet — the Mac's local voice will be used.",
     "key.placeholder": "Paste sk-…",
-    "key.save": "Save",
+    "key.saveTest": "Save and test",
+    "key.testing": "Testing…",
+    "key.test": "Test connection",
+    "key.change": "Change",
+    "key.cancel": "Cancel",
     "key.clear": "Clear",
-    "key.bad": "That key doesn't look right.",
+    "key.clear.confirm": "Click again to clear",
+    "key.toast.ok": "Key is valid — connected",
+    "key.err.auth": "The key was rejected ({0}) and wasn't saved. Check it and paste again.",
+    "key.err.http": "The service returned an error ({0}); the key wasn't saved.",
+    "key.err.network": "Couldn't reach the service. Check your connection and try again.",
+    "key.err.timeout": "The service didn't respond within 15 seconds. Try again shortly.",
+    "key.err.format": "That doesn't look like a key. Check it and paste again.",
+    "key.err.noBase": "Fill in the Base URL above first.",
+    "key.err.noKey": "There's no key to test yet.",
+    "key.err.test.auth": "This key no longer works ({0}). Please change it.",
     "sec.try": "Try it",
     "try.placeholder": "Type something to read with the current settings",
     "try.play": "Read aloud",
@@ -178,6 +218,22 @@
 .va-input{flex:1;min-width:0;padding:7px 10px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2,transparent);color:inherit;font:inherit;font-size:13px}
 .va-input:focus-visible{outline:2px solid var(--dsw-focus-ring-color);outline-offset:1px}
 .va-inline{display:flex;gap:8px;align-items:center;flex:1;min-width:0;justify-content:flex-end}
+.va-keyline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.va-keyline-text{display:flex;flex-direction:column;gap:2px;flex:1;min-width:140px}
+.va-keyline-text code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}
+.va-keyline-sub{font-size:12px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.va-ok{color:#1f9d55;font-weight:500}
+.va-dot{width:8px;height:8px;margin:0 4px;border-radius:50%;background:var(--dsw-alias-border-l3,#888)}
+.va-mark.is-ok,.va-keyline .va-mark{background:#1f9d55}
+.va-keyerr{font-size:12px;color:#d93a3a;line-height:1.45}
+.va-btn .va-spin{width:12px;height:12px;margin-right:6px;vertical-align:-2px;display:inline-block}
+.va-spin.is-light{border-color:rgba(255,255,255,.35);border-top-color:#fff}
+.va-btn[disabled]{opacity:.5;cursor:default}
+.va-toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:1000;display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;background:var(--dsw-alias-bg-layer-2,#2c2c2e);border:1px solid var(--dsw-alias-border-l2);box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:14px;animation:va-toast .22s ease-out}
+@keyframes va-toast{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+.va-btn.is-danger{color:#d93a3a;border-color:#d93a3a}
+.va-row.is-stack{flex-direction:column;align-items:stretch;gap:10px}
+.va-row.is-stack .va-inline{justify-content:flex-start;width:100%}
 .va-try{display:flex;gap:8px;padding:14px 18px}
 .va-seg .va-ico{display:inline-flex;vertical-align:-2px;margin-right:5px}
 .va-btn.is-primary{background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground);border-color:transparent}
@@ -231,8 +287,9 @@
       function Switch({ value, onChange, label }) {
         return h("button", { type: "button", role: "switch", "aria-checked": !!value, "aria-label": label, className: "va-switch" + (value ? " is-on" : ""), onClick: () => onChange(!value) });
       }
-      function Row({ title, hint, dim, children }) {
-        return h("div", { className: "va-row" + (dim ? " is-dim" : "") },
+      // stack：说明文字较长、控件是输入框时，控件单独占一行，不跟文字抢宽度
+      function Row({ title, hint, dim, stack, children }) {
+        return h("div", { className: "va-row" + (dim ? " is-dim" : "") + (stack ? " is-stack" : "") },
           h("div", { className: "va-label" }, h("span", { className: "va-title" }, title), hint ? h("span", { className: "va-hint" }, hint) : null),
           children);
       }
@@ -244,7 +301,15 @@
         const [, tick] = useState(0);
         const saveTimer = useRef(0);
         const [keyDraft, setKeyDraft] = useState("");
-        const [keyMsg, setKeyMsg] = useState("");
+        const [keyMsg, setKeyMsg] = useState("");      // 红字错误
+        const [keyEditing, setKeyEditing] = useState(false); // 已有 key 时点了「更换」
+        const [keyBusy, setKeyBusy] = useState(false);
+        const [toast, setToast] = useState("");
+        useEffect(() => { if (!toast) return; const id = setTimeout(() => setToast(""), 2600); return () => clearTimeout(id); }, [toast]);
+        const [baseDraft, setBaseDraft] = useState(null); // null = 没在编辑，显示已保存的值
+        const [baseMsg, setBaseMsg] = useState("");
+        const [confirmClear, setConfirmClear] = useState(false); // 「清除」要点两次，key 删了找不回来
+        useEffect(() => { if (!confirmClear) return; const id = setTimeout(() => setConfirmClear(false), 4000); return () => clearTimeout(id); }, [confirmClear]);
         const [tryText, setTryText] = useState("");
         const [pane, setPane] = useState(null);
         // 播放状态：idle / starting（已点、脚本还没起来）/ synth（正在生成）/ play（正在播放）
@@ -276,9 +341,27 @@
               () => setStatus(t("err.save")));
           }, 250);
         };
-        const saveKey = (key) => call("key.set", { key }).then(
-          (v) => { setState((s) => ({ ...s, hasKey: v.hasKey })); setKeyDraft(""); setKeyMsg(""); },
-          () => setKeyMsg(t("key.bad")));
+        const clearKey = (provider) => call("key.set", { provider, key: "" }).then(
+          (v) => { setState((s) => ({ ...s, keys: v.keys })); setKeyMsg(""); setKeyEditing(false); }, () => {});
+        const ERR = { auth: "key.err.auth", http: "key.err.http", network: "key.err.network", timeout: "key.err.timeout", format: "key.err.format", "no-base": "key.err.noBase", "no-key": "key.err.noKey" };
+        // 带 key = 先测后存；不带 = 测当前那把
+        const verifyKey = (provider, key) => {
+          setKeyBusy(true); setKeyMsg("");
+          call("key.verify", key ? { provider, key } : { provider }).then((v) => {
+            setKeyBusy(false);
+            setState((s) => ({ ...s, keys: v.keys }));
+            const r = v.result;
+            if (r.ok) { setKeyDraft(""); setKeyEditing(false); setToast(t("key.toast.ok")); return; }
+            const id = !key && r.reason === "auth" ? "key.err.test.auth" : (ERR[r.reason] || "key.err.network");
+            setKeyMsg(fmt(t(id), r.status ?? ""));
+          }, () => { setKeyBusy(false); setKeyMsg(t("key.err.network")); });
+        };
+        const saveBase = () => {
+          if (baseDraft === null) return;
+          const v = baseDraft.trim();
+          if (v !== "" && !/^https?:\/\/\S+$/.test(v)) { setBaseMsg(t("baseUrl.bad")); return; }
+          setBaseMsg(""); setBaseDraft(null); set({ baseUrl: v.replace(/\/+$/, "") });
+        };
         const finish = (p, ms) => {
           stopPoll(); clearFinal(); setPhase(p);
           finalTimer.current = setTimeout(() => setPhase("idle"), ms);
@@ -339,7 +422,8 @@
         if (error) return h("div", { className: "va-page" }, style, h("div", { className: "va-error" }, error, h("button", { type: "button", className: "va-btn", onClick: load }, t("retry"))));
         if (!state) return h("div", { className: "va-page" }, style);
 
-        const c = { auth: "account", ...state.config };
+        const c = { provider: "official", baseUrl: "", ...state.config };
+        const keys = state.keys ?? { official: { source: null }, custom: { source: null } };
         const stale = state.hostVersion !== VERSION;
         const mac = state.platform === "darwin";
         const canPlay = mac && !stale; // 旧后台没有播放状态接口，先不让试听
@@ -350,20 +434,41 @@
           : [["deepseek", t("engine.deepseek")]];
         const voices = state.voices.filter((v) => v.locale.startsWith(c.lang + "_"));
         const minsLeft = state.watch.on ? Math.max(0, Math.round((state.watch.until - Date.now()) / 60000)) : 0;
-        const authHint = c.auth === "account"
-          ? (!state.signedIn ? t("auth.account.no")
-            : state.accountTts === "rejected" ? (state.hasKey ? t("auth.account.fallback") : t("auth.account.nokey"))
-            : t("auth.account.ok"))
-          : (keyMsg || (state.hasKey ? t("key.set") : t("key.unset")));
+        const custom = c.provider === "custom";
+        const k = custom ? keys.custom : keys.official;
+        const ownKey = k.source === "own";
+        const CHECK = h("span", { className: "va-mark", "aria-hidden": true }, "✓");
+        // 和 va-tts.mjs 的 ttsEndpoint 一致：x.com 与 x.com/v1 都落到 x.com/v1/tools/tts
+        const endpoint = (b) => (/\/v1$/.test(b) ? b + "/tools/tts" : b + "/v1/tools/tts");
+        const showInput = !k.source || keyEditing;
+        const baseHint = baseMsg || (c.baseUrl ? fmt(t("baseUrl.hint"), endpoint(c.baseUrl)) : t("baseUrl.need"));
 
         const deepseekPane = h("div", { className: "va-card", role: "tabpanel", id: "va-pane-deepseek", "aria-labelledby": "va-tab-deepseek" },
-          h(Row, { title: t("auth"), hint: authHint },
-            h(Seg, { value: c.auth, options: [["account", t("auth.account")], ["api-key", t("auth.key")]], onChange: (auth) => set({ auth }) })),
-          c.auth !== "api-key" ? null : h(Row, { title: t("key") },
-            h("form", { className: "va-inline", onSubmit: (e) => { e.preventDefault(); if (keyDraft.trim()) saveKey(keyDraft); } },
-              h("input", { className: "va-input", type: "password", autoComplete: "off", spellCheck: false, value: keyDraft, placeholder: t("key.placeholder"), "aria-label": t("key"), onChange: (e) => setKeyDraft(e.target.value), style: { maxWidth: 240 } }),
-              h("button", { type: "submit", className: "va-btn", disabled: !keyDraft.trim() }, t("key.save")),
-              state.hasKey ? h("button", { type: "button", className: "va-btn", onClick: () => saveKey("") }, t("key.clear")) : null)),
+          h(Row, { title: t("provider"), hint: custom ? t("provider.custom.hint") : t("provider.official.hint") },
+            h(Seg, { value: c.provider, options: [["official", t("provider.official")], ["custom", t("provider.custom")]], onChange: (provider) => { setKeyDraft(""); setKeyMsg(""); setKeyEditing(false); set({ provider }); } })),
+          !custom ? null : h(Row, { title: t("baseUrl"), hint: baseHint, stack: true },
+            h("form", { className: "va-inline", onSubmit: (e) => { e.preventDefault(); saveBase(); } },
+              h("input", { className: "va-input", type: "url", autoComplete: "off", spellCheck: false, value: baseDraft ?? c.baseUrl, placeholder: t("baseUrl.placeholder"), "aria-label": t("baseUrl"), onChange: (e) => { setBaseDraft(e.target.value); setBaseMsg(""); }, onBlur: saveBase }))),
+          h(Row, { title: t("key"), hint: showInput && !k.source ? t(custom ? "key.none.custom" : "key.none.official") : null, stack: true },
+            // 已有 key：一行状态 + 操作；没有 key 或点了「更换」：输入框
+            k.source && !keyEditing ? h("div", { className: "va-keyline" },
+              k.verified ? CHECK : h("span", { className: "va-dot", "aria-hidden": true }),
+              h("span", { className: "va-keyline-text" },
+                h("code", null, k.masked || "sk-…"),
+                h("span", { className: "va-keyline-sub" }, t(ownKey ? "key.src.own" : "key.src.dsh"), " · ",
+                  h("span", { className: k.verified ? "va-ok" : "" }, t(k.verified ? "key.ok" : "key.unverified")))),
+              h("button", { type: "button", className: "va-btn", disabled: keyBusy, onClick: () => verifyKey(c.provider) },
+                keyBusy ? h(React.Fragment, null, h("span", { className: "va-spin", "aria-hidden": true }), t("key.testing")) : t("key.test")),
+              h("button", { type: "button", className: "va-btn", disabled: keyBusy, onClick: () => { setKeyEditing(true); setKeyMsg(""); } }, t("key.change")),
+              ownKey ? h("button", { type: "button", className: "va-btn" + (confirmClear ? " is-danger" : ""), disabled: keyBusy,
+                onClick: () => { if (!confirmClear) { setConfirmClear(true); return; } setConfirmClear(false); clearKey(c.provider); } },
+                confirmClear ? t("key.clear.confirm") : t("key.clear")) : null)
+            : h("form", { className: "va-inline", onSubmit: (e) => { e.preventDefault(); if (keyDraft.trim() && !keyBusy) verifyKey(c.provider, keyDraft); } },
+              h("input", { className: "va-input", type: "password", autoComplete: "off", spellCheck: false, autoFocus: keyEditing, value: keyDraft, placeholder: t("key.placeholder"), "aria-label": t("key"), disabled: keyBusy, onChange: (e) => { setKeyDraft(e.target.value); setKeyMsg(""); } }),
+              h("button", { type: "submit", className: "va-btn is-primary", disabled: !keyDraft.trim() || keyBusy },
+                keyBusy ? h(React.Fragment, null, h("span", { className: "va-spin is-light", "aria-hidden": true }), t("key.testing")) : t("key.saveTest")),
+              keyEditing ? h("button", { type: "button", className: "va-btn", disabled: keyBusy, onClick: () => { setKeyEditing(false); setKeyDraft(""); setKeyMsg(""); } }, t("key.cancel")) : null),
+            keyMsg ? h("div", { className: "va-keyerr", role: "alert" }, keyMsg) : null),
           h(Row, { title: t("voiceId") },
             h(Seg, { value: c.voiceId, options: [["stella", "Stella"], ["tide", "Tide"]], onChange: (voiceId) => set({ voiceId }) })));
 
@@ -378,6 +483,7 @@
               h("span", null, c.rate))));
 
         return h("div", { className: "va-page" }, style,
+          toast ? h("div", { className: "va-toast", role: "status", "aria-live": "polite" }, h("span", { className: "va-mark is-ok" }, "✓"), toast) : null,
           h("p", { className: "va-intro" }, t("intro")),
           stale ? h("div", { className: "va-notice", role: "alert" }, t("stale")) : null,
           mac ? null : h("div", { className: "va-notice", role: "note" }, t("unsupported")),
