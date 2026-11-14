@@ -1,0 +1,4 @@
+# Voice alerts: approval announcements + voice-alert skill.
+- insert:
+    - id: voice-alert
+      name: 'dsh-plugin-voice-alert'

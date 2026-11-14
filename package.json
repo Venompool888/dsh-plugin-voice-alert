@@ -1,0 +1,51 @@
+{
+  "name": "dsh-plugin-voice-alert",
+  "version": "1.0.0",
+  "description": "Voice alerts for DeepSeek Harness (DSH): speaks up when a session needs your approval, a verification code, or a long task finishes. Settings → Voice to pick voice, language and engine.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "tts",
+    "voice",
+    "notification"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Venompool888/dsh-plugin-voice-alert.git"
+  },
+  "homepage": "https://github.com/Venompool888/dsh-plugin-voice-alert#readme",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./client": "./client.js"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "locale/*.json",
+    "icon.svg",
+    "skills/**",
+    "client.js",
+    "bin/voice-alert",
+    "bin/va-tts.mjs",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  }
+}

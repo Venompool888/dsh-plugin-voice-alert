@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Voice",
+    "description": "Voice alerts: speaks up when a session needs your approval or a verification code, naming the source and project. Configure voice, language and engine in Settings → Voice."
+  }
+}
