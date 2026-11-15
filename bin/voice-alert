@@ -22,6 +22,19 @@ APPROVAL_ON="${VA_CFG_APPROVAL:-1}"
 # 云端合成：插件写进 config.env 的 node + va-tts.mjs
 NODE_BIN="${VA_CFG_NODE:-$(command -v node 2>/dev/null)}"
 TTS_JS="${VA_CFG_TTS:-}"
+# AI 现写播报句子的小工具，和 va-tts.mjs 放在一起
+LINE_JS="${TTS_JS%/*}/va-line.mjs"
+# 离开检测：键鼠超过 IDLE_AFTER 秒没动才喊；喊过之后一动就停
+IDLE_NAG="${VA_CFG_IDLE_NAG:-1}"
+CLOUD_RATE="${VA_CLOUD_RATE:-${VA_CFG_CLOUD_RATE:-1}}"
+AI_LINES="${VA_CFG_AI_LINES:-1}"
+PERSONA="${VA_CFG_PERSONA:-pro}"
+IDLE_AFTER="${VA_IDLE_AFTER:-30}"
+NAG_GAP1="${VA_NAG_GAP1:-30}"      # 前几次每 30 秒喊一次
+NAG_GAP2="${VA_NAG_GAP2:-120}"     # 之后每 2 分钟
+NAG_SWITCH="${VA_NAG_SWITCH:-5}"   # 喊满 5 次后放慢
+NAG_MAX="${VA_NAG_MAX:-1200}"      # 最多 20 分钟，之后只留通知
+NAG_POLL="${VA_NAG_POLL:-2}"
 # 鉴权：account = DSH 已登录的 DeepSeek 账号（插件同步 token），api-key = 自定义 key
 # 语音合成服务商：official = DeepSeek 官方（只要 key）；custom = 第三方兼容服务（base URL + key）
 PROVIDER="${VA_CFG_PROVIDER:-official}"
@@ -29,6 +42,8 @@ BASE_URL="${VA_CFG_BASE_URL:-}"
 if [ "$PROVIDER" = "custom" ]; then KEY_FILE="$HOME/.dsh/secrets/voice-alert-custom.key"
 else KEY_FILE="$HOME/.dsh/secrets/deepseek.key"; fi
 CACHE="$STATE/cache"
+# 设置页试听用的音频：配好 key 后一次性生成，单独放，不参与「只留 60 条」的清理
+PREVIEW_DIR="$STATE/previews"
 SOUNDS="/System/Library/Sounds"
 STARTED=$(date +%s)
 VERSION="1.2.0"
@@ -275,8 +290,9 @@ SAVED_MUTED=""; SAVED_VOL=""; TOUCHED=0
 
 prepare_audio() {
   [ "${KEEP_VOLUME:-0}" = "1" ] && return 0
-  SAVED_MUTED=$(osascript -e 'output muted of (get volume settings)' 2>/dev/null)
-  SAVED_VOL=$(osascript -e 'output volume of (get volume settings)' 2>/dev/null)
+  # 一次 osascript 同时读静音和音量（每次调用约 0.2 秒，试听要快）
+  local vs; vs=$(osascript -e 'set v to get volume settings' -e 'return ((output muted of v) as text) & " " & (output volume of v)' 2>/dev/null)
+  SAVED_MUTED="${vs%% *}"; SAVED_VOL="${vs##* }"
   case "$SAVED_MUTED" in true) osascript -e 'set volume without output muted' >/dev/null 2>&1; TOUCHED=1;; esac
   if [ -n "$SAVED_VOL" ] && [ "$SAVED_VOL" -lt 45 ] 2>/dev/null; then
     osascript -e 'set volume output volume 60' >/dev/null 2>&1; TOUCHED=1
@@ -311,7 +327,8 @@ acquire_lock() {
 }
 release_lock() { rm -rf "$LOCK" 2>/dev/null; }
 
-chime() { [ -f "$SOUNDS/$1.aiff" ] && afplay -v 1.2 "$SOUNDS/$1.aiff" 2>/dev/null; }
+# 系统提示音文件末尾有很长的静音（Sosumi 整个要 2.4 秒），只播前 0.7 秒，后面的话能马上接上
+chime() { [ -f "$SOUNDS/$1.aiff" ] && afplay -v 1.2 -t 0.7 "$SOUNDS/$1.aiff" 2>/dev/null; }
 
 has_key() {
   if [ "$PROVIDER" = "custom" ]; then [ -n "$BASE_URL" ] && [ -s "$KEY_FILE" ]
@@ -330,6 +347,7 @@ tts_to() { printf '%s' "$1" | "$NODE_BIN" "$TTS_JS" "$VOICE_ID" "$2" "$PROVIDER"
 synth_file() {
   local text="$1" h out part
   h=$(printf '%s|%s' "$VOICE_ID" "$text" | md5 -q 2>/dev/null) || return 1
+  if [ -s "$PREVIEW_DIR/$h.wav" ]; then printf '%s\n' "$PREVIEW_DIR/$h.wav"; return 0; fi
   out="$CACHE/$h.wav"
   if [ -s "$out" ]; then printf '%s\n' "$out"; return 0; fi
   part="$out.part.$$"
@@ -369,7 +387,10 @@ speak() {
     out=$(synth_file "$text" 2>/dev/null)
     if [ -n "$out" ] && [ -s "$out" ]; then
       phase play
-      afplay "$out" 2>/dev/null &
+      # 云端语音没有语速参数：播放时用 afplay 的高质量时间伸缩（-q 1）调速，只改快慢不改音调
+      if [ "$CLOUD_RATE" = "1" ] || [ "$CLOUD_RATE" = "1.0" ]; then afplay "$out" 2>/dev/null &
+      else afplay -r "$CLOUD_RATE" -q 1 "$out" 2>/dev/null &
+      fi
       pid=$!
       echo "$pid" > "$STATE/say.pid" 2>/dev/null
       wait "$pid" 2>/dev/null; st=$?
@@ -382,6 +403,7 @@ speak() {
   fi
   [ "$ENGINE" = "deepseek" ] && outcome fallback
   phase play
+  [ -n "$VOICE" ] || { [ "$VLANG" != "zh" ] || VOICE=$(detect_voice); }
   if [ -n "$VOICE" ]; then
     say -v "$VOICE" -r "$rate" -- "$text" 2>/dev/null &
   else
@@ -408,13 +430,30 @@ digits_cn() {
   fi
 }
 
+# 键鼠空闲秒数（macOS 自带，不需要任何权限）。测试时可用 VA_FAKE_IDLE_FILE 指定一个写着秒数的文件
+hid_idle() {
+  if [ -n "${VA_FAKE_IDLE_FILE:-}" ]; then cat "$VA_FAKE_IDLE_FILE" 2>/dev/null || echo 0; return; fi
+  ioreg -c IOHIDSystem -d 4 2>/dev/null | awk '/HIDIdleTime/ {printf "%d", $NF/1000000000; exit}'
+}
+
+# 让 AI 按选定语气现写一句；失败、超时或没提到项目名时退回固定句子（返回空）
+ai_line() {
+  [ "$AI_LINES" = "1" ] && [ -f "$LINE_JS" ] && [ -x "$NODE_BIN" ] && has_key || return 0
+  local out
+  out=$(printf '%s' "$TEXT" | "$NODE_BIN" "$LINE_JS" "$STYLE" "$VLANG" "$PERSONA" "$(source_label)" "$PROJECT" "$1" "$PROVIDER" "$BASE_URL" 2>/dev/null) || return 0
+  [ -n "$out" ] || return 0
+  # 项目名必须念出来，AI 漏了就补上开头
+  if [ -n "$PROJECT" ] && [[ "$out" != *"$PROJECT"* ]]; then out="$(lead)，$out"; fi
+  printf '%s' "$out"
+}
+
 payload() {
   case "$STYLE" in
     code)
       local cn; cn=$(digits_cn "$TEXT")
-      prewarm "$(lead)$(m need_code)" "$(m code_is)$cn" "$(m again)$cn" "$(m send_code)"
-      if [ "$NO_CHIME" = "0" ]; then chime "Sosumi"; sleep 0.25; chime "Sosumi"; sleep 0.3; fi
-      speak "$(lead)$(m need_code)" 180
+      prewarm "${LINE:-$(lead)$(m need_code)}" "$(m code_is)$cn" "$(m again)$cn" "$(m send_code)"
+      if [ "$NO_CHIME" = "0" ]; then chime "Sosumi" & sleep 0.3; chime "Sosumi"; fi
+      speak "${LINE:-$(lead)$(m need_code)}" 180
       speak "$(m code_is)$cn" 135
       sleep 0.7
       speak "$(m again)$cn" 125
@@ -422,11 +461,11 @@ payload() {
       ;;
     done)
       [ "$NO_CHIME" = "1" ] || chime "Glass"
-      speak "$(lead)$(m done)$TEXT"
+      speak "${LINE:-$(lead)$(m done)$TEXT}"
       ;;
     approve)
-      [ "$NO_CHIME" = "1" ] || { chime "Frog"; sleep 0.4; }
-      speak "$(lead)$(m approve)$TEXT" 190
+      [ "$NO_CHIME" = "1" ] || chime "Frog"
+      speak "${LINE:-$(lead)$(m approve)$TEXT}" 190
       ;;
     progress)
       [ "$NO_CHIME" = "1" ] || chime "Tink"
@@ -434,7 +473,7 @@ payload() {
       ;;
     urgent)
       [ "$NO_CHIME" = "1" ] || { chime "Frog"; sleep 0.4; }
-      speak "$(lead)$(m sep)$TEXT" 190
+      speak "${LINE:-$(lead)$(m sep)$TEXT}" 190
       ;;
     raw) speak "$TEXT" ;;
     *) speak "$(lead)$(m sep)$TEXT" ;;
@@ -469,6 +508,32 @@ KEEP_VOLUME=0; [ "${VA_CFG_AUTO_VOLUME:-1}" = "0" ] && KEEP_VOLUME=1
 
 case "$1" in
   --help|-h|help) usage; exit 0 ;;
+  prepare)
+    # 生成设置页的全部试听音频：voice-alert prepare <示例项目名> <测试句>，标准输入每行一句额外的示例
+    # 进度写到 $PREVIEW_DIR/progress（"已完成 总数"），完成后写 "done"
+    mkdir -p "$PREVIEW_DIR"
+    [ "$ENGINE" = "deepseek" ] && has_key && can_cloud || { echo "nokey" > "$PREVIEW_DIR/progress"; exit 0; }
+    SOURCE=dsh; PROJECT="${2:-}"; TEXT="${3:-}"
+    _cn=$(digits_cn "4821")
+    _list=$( { printf '%s\n' "$(lead)$(m approve)$TEXT" "$(lead)$(m need_code)" "$(m code_is)$_cn" "$(m again)$_cn" "$(m send_code)"; cat; } | awk 'NF && !seen[$0]++')
+    _total=$(printf '%s\n' "$_list" | grep -c .); _done=0; _keep=""
+    printf '0 %s\n' "$_total" > "$PREVIEW_DIR/progress"
+    while IFS= read -r _t; do
+      [ -n "$_t" ] || continue
+      _h=$(printf '%s|%s' "$VOICE_ID" "$_t" | md5 -q)
+      _keep="$_keep $_h.wav"
+      if [ ! -s "$PREVIEW_DIR/$_h.wav" ]; then
+        if [ -s "$CACHE/$_h.wav" ]; then cp "$CACHE/$_h.wav" "$PREVIEW_DIR/$_h.wav"
+        else tts_to "$_t" "$PREVIEW_DIR/$_h.wav.part" && [ -s "$PREVIEW_DIR/$_h.wav.part" ] && mv -f "$PREVIEW_DIR/$_h.wav.part" "$PREVIEW_DIR/$_h.wav"; rm -f "$PREVIEW_DIR/$_h.wav.part"
+        fi
+      fi
+      [ -s "$PREVIEW_DIR/$_h.wav" ] && _done=$((_done + 1))
+      printf '%s %s\n' "$_done" "$_total" > "$PREVIEW_DIR/progress"
+    done <<< "$_list"
+    # 换了音色或语言后，旧的试听音频删掉
+    for _f in "$PREVIEW_DIR"/*.wav; do [ -e "$_f" ] || continue; case " $_keep " in *" ${_f##*/} "*) ;; *) rm -f "$_f" ;; esac; done
+    [ "$_done" = "$_total" ] && echo "done $_total" > "$PREVIEW_DIR/progress"
+    exit 0 ;;
   --version|-V) echo "voice-alert $VERSION"; exit 0 ;;
   doctor)
     echo "macOS : $(sw_vers -productVersion 2>/dev/null)  $(uname -m)"
@@ -491,8 +556,18 @@ case "$1" in
     else echo "watch : 关"; fi
     [ -d "$LOCK" ] && echo "state : 正在播放" || echo "state : 空闲"
     exit 0 ;;
+  resolve)
+    # 某个来源的事已经处理掉了（例如 DSH 里批准已点掉）：只结束这个来源的离开循环
+    if [ -f "$STATE/nag.src" ] && [ "$(cat "$STATE/nag.src")" = "${2:-}" ]; then
+      kill "$(cat "$STATE/nag.pid" 2>/dev/null)" 2>/dev/null
+      rm -f "$STATE/nag.src" "$STATE/nag.pid"
+      echo "$(ts)	NAG-END	${2:-} 已处理" >> "$LOG"
+    fi
+    exit 0 ;;
   stop)
     date +%s > "$STOP"
+    [ -f "$STATE/nag.pid" ] && kill "$(cat "$STATE/nag.pid" 2>/dev/null)" 2>/dev/null
+    rm -f "$STATE/nag.src" "$STATE/nag.pid"
     # 掐掉正在播的那句和还在排队的重复循环，否则 stop 之后还会再念几遍
     if [ -f "$STATE/loop.pid" ]; then
       kill "$(cat "$STATE/loop.pid" 2>/dev/null)" 2>/dev/null
@@ -550,7 +625,7 @@ done
 [ -z "$TEXT" ] && [ "$STYLE" = "approve" ] && TEXT="$(m please_check)"
 [ -z "$TEXT" ] && { echo "缺少要播报的内容" >&2; exit 2; }
 # 英文播报时不要用中文本地音色兜底，交给系统默认
-[ -n "$VOICE" ] || { [ "$VLANG" != "zh" ] || VOICE=$(detect_voice); }
+# 本地中文音色只在退回 macOS say 时才检测（检测要试录一段，约 0.8 秒），见 speak()
 
 if [ "$STYLE" = "approve" ] && [ "$APPROVAL_ON" = "0" ] && [ "${VA_CFG_APPROVAL_FORCE:-0}" != "1" ]; then
   printf '%s\t%s\tSKIP(批准提醒已关)\n' "$(ts)" "$TEXT" >> "$LOG"
@@ -580,14 +655,84 @@ run_once() {
   prepare_audio
   [ "$1" = "1" ] && rm -f "$STATE/result"
   phase synth
-  log "$STYLE	[$(source_label)${PROJECT:+/$PROJECT}] $TEXT	($1/$REPEAT)"
+  # 设置页的批准/验证码试听：也用 AI 现写的句子，听得出当前语气
+  case "$STYLE" in approve|code|urgent|done) [ "${VA_PREVIEW_AI:-0}" = "1" ] && LINE=$(ai_line 1) ;; esac
+  log "$STYLE	[$(source_label)${PROJECT:+/$PROJECT}] ${LINE:-$TEXT}	($1/$REPEAT)"
   payload
+  LINE=""
   banner
   restore_audio
   rm -f "$STATE/status"
   trap - EXIT
   release_lock
 }
+
+# 喊一轮：AI 现写一句（或固定句子），带提示音念出来
+nag_round() {
+  acquire_lock
+  trap 'restore_audio; rm -f "$STATE/status"; release_lock' EXIT
+  prepare_audio
+  [ "$1" = "1" ] && rm -f "$STATE/result"
+  phase synth
+  LINE=$(ai_line "$1")
+  log "$STYLE	[$(source_label)${PROJECT:+/$PROJECT}] ${LINE:-$TEXT}	(离开第$1次)"
+  payload
+  LINE=""
+  restore_audio
+  rm -f "$STATE/status"
+  trap - EXIT
+  release_lock
+}
+
+stopped() {
+  [ -f "$STOP" ] || return 1
+  [ "$(stat -f %m "$STOP" 2>/dev/null || echo 0)" -ge "$STARTED" ]
+}
+
+# 离开检测循环：
+#   先弹通知；事件后用户还在操作键鼠 → 人在电脑前，看得到通知，不出声。
+#   键鼠 IDLE_AFTER 秒没动 → 开始喊，之后按间隔重复；喊过之后键鼠一动就停。
+#   最多 NAG_MAX 秒；DSH 那边批准已处理会调 `voice-alert resolve dsh` 提前结束。
+nag_loop() {
+  local t0 now el idle spoken=0 n=0 last_start=0 last_end=0 gap
+  t0=$(date +%s)
+  banner
+  while :; do
+    stopped && break
+    now=$(date +%s); el=$((now - t0))
+    [ "$el" -ge "$NAG_MAX" ] && { log "NAG-END	超过 $NAG_MAX 秒没回来，停止"; break; }
+    idle=$(hid_idle); idle=${idle:-0}
+    if [ "$spoken" = "0" ]; then
+      # 事件 2 秒后还有键鼠操作 = 人在电脑前
+      if [ "$el" -gt 2 ] && [ "$idle" -lt $((el - 2)) ]; then log "NAG-SKIP	用户在电脑前"; break; fi
+      if [ "$idle" -ge "$IDLE_AFTER" ]; then
+        n=1; last_start=$(date +%s); nag_round "$n"; spoken=1; last_end=$(date +%s)
+      fi
+    else
+      now=$(date +%s)
+      # 从开始念这句算起动过键鼠（念的过程中动也算）= 人回来了
+      if [ "$idle" -lt $((now - last_start)) ]; then log "NAG-END	用户回来了"; break; fi
+      gap=$NAG_GAP1; [ "$n" -ge "$NAG_SWITCH" ] && gap=$NAG_GAP2
+      if [ $((now - last_end)) -ge "$gap" ]; then
+        n=$((n + 1)); last_start=$(date +%s); nag_round "$n"; last_end=$(date +%s)
+      fi
+    fi
+    sleep "$NAG_POLL"
+  done
+  rm -f "$STATE/nag.src" "$STATE/nag.pid"
+}
+
+NAG=0
+case "$STYLE" in approve|code|urgent|done) [ "$IDLE_NAG" = "1" ] && [ "${VA_NO_NAG:-0}" != "1" ] && [ "$WAIT" != "1" ] && NAG=1 ;; esac
+if [ "$NAG" = "1" ]; then
+  # 新的提醒顶掉旧的离开循环
+  [ -f "$STATE/nag.pid" ] && kill "$(cat "$STATE/nag.pid" 2>/dev/null)" 2>/dev/null
+  ( nag_loop ) >/dev/null 2>&1 &
+  echo $! > "$STATE/nag.pid"
+  printf '%s' "$SOURCE" > "$STATE/nag.src"
+  disown 2>/dev/null
+  exit 0
+fi
 
 if [ "$WAIT" = "1" ]; then
   n=1

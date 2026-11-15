@@ -51,11 +51,13 @@ const NODE_PATH = !process.versions.electron ? process.execPath : (existsSync(RU
 const DEFAULTS = {
   engine: 'deepseek', provider: 'official', baseUrl: '', voiceId: 'stella', sayVoice: '', lang: 'zh', rate: 185,
   autoVolume: true, chime: true, banner: true, dedupe: 20, approval: true, watchHours: 4,
+  idleNag: true, aiLines: true, persona: 'pro', personaCustom: '', cloudRate: 1,
 }
 const ENV_KEYS = {
   engine: 'VA_CFG_ENGINE', provider: 'VA_CFG_PROVIDER', baseUrl: 'VA_CFG_BASE_URL', voiceId: 'VA_CFG_VOICE_ID', sayVoice: 'VA_CFG_SAY_VOICE', lang: 'VA_CFG_LANG',
   rate: 'VA_CFG_RATE', autoVolume: 'VA_CFG_AUTO_VOLUME', chime: 'VA_CFG_CHIME', banner: 'VA_CFG_BANNER',
   dedupe: 'VA_CFG_DEDUPE', approval: 'VA_CFG_APPROVAL', watchHours: 'VA_CFG_WATCH_HOURS',
+  idleNag: 'VA_CFG_IDLE_NAG', aiLines: 'VA_CFG_AI_LINES', persona: 'VA_CFG_PERSONA', personaCustom: 'VA_CFG_PERSONA_CUSTOM', cloudRate: 'VA_CFG_CLOUD_RATE',
 }
 
 // ---------- settings ----------
@@ -82,6 +84,13 @@ function sanitize(c) {
     dedupe: int(c.dedupe, 0, 120, DEFAULTS.dedupe),
     approval: c.approval !== false,
     watchHours: int(c.watchHours, 1, 12, DEFAULTS.watchHours),
+    // 云端语音语速倍数：0.7–1.6，按 0.05 取整
+    cloudRate: (() => { const n = Number(c.cloudRate); return Number.isFinite(n) ? Math.round(Math.min(1.6, Math.max(0.7, n)) * 20) / 20 : 1 })(),
+    idleNag: c.idleNag !== false,
+    aiLines: c.aiLines !== false,
+    persona: oneOf(c.persona, ['pro', 'tsundere', 'cute', 'clingy', 'cold', 'custom'], DEFAULTS.persona),
+    // 自定义人设：一行纯文本，最多 200 字
+    personaCustom: typeof c.personaCustom === 'string' ? c.personaCustom.replace(/[\r\n\t]+/g, ' ').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 200) : '',
   }
 }
 
@@ -247,9 +256,107 @@ function run(args, wait) {
   })
 }
 
+// ---------- 试听音频：配好 key 后一次性生成，点了就播 ----------
+
+const PREVIEW_DIR = `${STATE}/previews`
+const EXAMPLES_FILE = `${STATE}/examples.json`
+const PERSONAS = ['pro', 'tsundere', 'cute', 'clingy', 'cold']
+const TEST_SAMPLES = { zh: '这是一条测试。', en: 'This is a test.', ja: 'これはテストです。', ko: '테스트입니다.', fr: 'Ceci est un test.', de: 'Das ist ein Test.', es: 'Esto es una prueba.', pt: 'Isto é um teste.', it: 'Questo è un test.', ru: 'Это проверка.' }
+const sampleProject = (lang) => (lang === 'zh' ? '示例' : 'demo')
+// 中英文的语气示例写死；其他语言和自定义语气由 AI 写一次后存进 examples.json
+const STATIC_EXAMPLES = {
+  zh: {
+    pro: ['来自 DSH，3200 项目需要你批准，方便时回来看一下。', '3200 项目的部署跑完了，结果等你确认。'],
+    tsundere: ['哼，3200 项目等你批准半天了，才不是特意叫你的。', '又让我喊你？3200 项目卡住了，快点回来啦。'],
+    cute: ['嘿嘿，3200 项目在等你点批准哦，快回来呀！', '叮咚！3200 项目跑完啦，回来看看嘛。'],
+    clingy: ['你去哪儿了嘛，3200 项目一直等你批准，回来好不好。', '人家等你好久了，3200 项目要验证码啦。'],
+    cold: ['3200 项目，待批准。', 'DSH：3200 项目需要验证码。'],
+  },
+  en: {
+    pro: ['From DSH: project 3200 needs your approval when you have a moment.', "Project 3200's deploy finished and is waiting for your review."],
+    tsundere: ["Hmph, project 3200 has been waiting forever. Not that I care, just approve it.", 'Calling you again? Project 3200 is stuck. Hurry up already.'],
+    cute: ['Hey hey, project 3200 is waiting for your approval, come back!', 'Ding dong! Project 3200 is all done, come take a look!'],
+    clingy: ['Where did you go? Project 3200 keeps waiting for you, please come back.', "I've been waiting so long, project 3200 needs a code."],
+    cold: ['Project 3200. Approval pending.', 'DSH: project 3200 needs a code.'],
+  },
+}
+function readExamplesCache() { try { return JSON.parse(readFileSync(EXAMPLES_FILE, 'utf8')) || {} } catch { return {} } }
+const customKey = (c) => `${c.lang}|custom|${createHash('sha256').update(c.personaCustom).digest('hex').slice(0, 12)}`
+
+// 当前语言下每种语气的两句示例；还没生成好的是 []
+function examplesFor(c) {
+  const cache = readExamplesCache()
+  const out = {}
+  for (const p of PERSONAS) out[p] = STATIC_EXAMPLES[c.lang]?.[p] || cache[`${c.lang}|${p}`] || []
+  out.custom = c.personaCustom ? cache[customKey(c)] || [] : []
+  return out
+}
+
+// 让 AI 写一句示例（va-line.mjs），失败返回 ''
+function aiExample(c, persona, style) {
+  return new Promise((resolve) => {
+    if (!NODE_PATH) return resolve('')
+    const args = [fileURLToPath(new URL('./bin/va-line.mjs', import.meta.url)), style, c.lang, persona, 'DSH', '3200', '1', c.provider, c.baseUrl]
+    const child = spawn(NODE_PATH, args, { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, VA_CFG_PERSONA_CUSTOM: c.personaCustom, VA_LINE_TIMEOUT_MS: '8000' } })
+    let out = ''
+    child.stdout.on('data', (d) => { out += d })
+    child.on('error', () => resolve(''))
+    child.on('exit', (code) => resolve(code === 0 ? out.trim() : ''))
+    child.stdin.end('')
+  })
+}
+
+async function fillAiExamples(c) {
+  const cache = readExamplesCache()
+  const jobs = []
+  if (!STATIC_EXAMPLES[c.lang]) for (const p of PERSONAS) if (!cache[`${c.lang}|${p}`]?.length) jobs.push([`${c.lang}|${p}`, p])
+  if (c.personaCustom && !cache[customKey(c)]?.length) jobs.push([customKey(c), 'custom'])
+  if (jobs.length === 0) return
+  await Promise.all(jobs.map(async ([k, p]) => {
+    const lines = (await Promise.all([aiExample(c, p, 'approve'), aiExample(c, p, 'done')])).filter(Boolean)
+    if (lines.length) cache[k] = lines
+  }))
+  try { mkdirSync(STATE, { recursive: true }); writeFileSync(EXAMPLES_FILE, JSON.stringify(cache), { mode: 0o600 }) } catch {}
+}
+
+let preparing = null      // 正在跑的那次
+let prepareAgain = false  // 跑的过程中设置又变了，跑完再来一次
+async function prepareOnce(ctx) {
+  const c = readConfig()
+  const keys = await keyStatus(ctx)
+  const k = c.provider === 'custom' ? keys.custom : keys.official
+  if (!IS_MAC || c.engine !== 'deepseek' || !k.source || (c.provider === 'custom' && !c.baseUrl)) return
+  await fillAiExamples(c)
+  const ex = examplesFor(c)
+  const lines = Object.values(ex).flat().join('\n')
+  await new Promise((resolve) => {
+    const child = spawn(SCRIPT, ['prepare', sampleProject(c.lang), TEST_SAMPLES[c.lang]], { stdio: ['pipe', 'ignore', 'ignore'] })
+    child.on('error', resolve); child.on('exit', resolve)
+    child.stdin.end(lines + '\n')
+  })
+}
+function schedulePrepare(ctx) {
+  if (preparing) { prepareAgain = true; return }
+  preparing = (async () => {
+    do { prepareAgain = false; try { await prepareOnce(ctx) } catch {} } while (prepareAgain)
+  })().finally(() => { preparing = null })
+}
+function previewStatus() {
+  let raw = ''
+  try { raw = readFileSync(`${PREVIEW_DIR}/progress`, 'utf8').trim() } catch {}
+  if (preparing) { const [d, t] = raw.split(' ').map(Number); return { state: 'running', done: Number.isFinite(d) ? d : 0, total: Number.isFinite(t) ? t : 0 } }
+  if (raw.startsWith('done')) return { state: 'ready' }
+  if (raw === 'nokey') return { state: 'nokey' }
+  return { state: raw ? 'partial' : 'idle' }
+}
+
 async function dispatch(ctx, endpoint, payload) {
   if (endpoint === 'config.get') {
-    return { ok: true, value: { config: readConfig(), watch: watchState(), voices: IS_MAC ? await listVoices() : [], platform: process.platform, keys: await keyStatus(ctx), hostVersion: HOST_VERSION } }
+    const c = readConfig()
+    return { ok: true, value: { config: c, watch: watchState(), voices: IS_MAC ? await listVoices() : [], platform: process.platform, keys: await keyStatus(ctx), hostVersion: HOST_VERSION, examples: examplesFor(c), preview: previewStatus() } }
+  }
+  if (endpoint === 'preview.status') {
+    return { ok: true, value: { preview: previewStatus(), examples: examplesFor(readConfig()) } }
   }
   if (endpoint === 'key.set') {
     const file = KEY_FILES[payload?.provider === 'custom' ? 'custom' : 'official']
@@ -274,12 +381,16 @@ async function dispatch(ctx, endpoint, payload) {
     if (result.ok) {
       if (candidate) saveKeyFile(KEY_FILES[provider], candidate)
       writeVerified(provider, fingerprint(key, base))
+      schedulePrepare(ctx)
     } else if (!candidate) writeVerified(provider, null)
     return { ok: true, value: { result, keys: await keyStatus(ctx) } }
   }
   if (endpoint === 'config.set') {
-    const next = sanitize({ ...readConfig(), ...(payload && typeof payload === 'object' ? payload : {}) })
+    const prev = readConfig()
+    const next = sanitize({ ...prev, ...(payload && typeof payload === 'object' ? payload : {}) })
     writeConfig(next)
+    // 影响试听音频的设置变了：后台重新生成
+    if (['voiceId', 'lang', 'provider', 'baseUrl', 'personaCustom', 'engine'].some((k) => prev[k] !== next[k])) schedulePrepare(ctx)
     return { ok: true, value: { config: next } }
   }
   if (endpoint === 'watch.set') {
@@ -313,7 +424,11 @@ async function dispatch(ctx, endpoint, payload) {
     const text = typeof payload?.text === 'string' ? payload.text.trim().slice(0, 500) : ''
     const TEST = { zh: '这是一条测试。', en: 'This is a test.', ja: 'これはテストです。', ko: '테스트입니다.', fr: 'Ceci est un test.', de: 'Das ist ein Test.', es: 'Esto es una prueba.', pt: 'Isto é um teste.', it: 'Questo è un test.', ru: 'Это проверка.' }
     const project = c.lang === 'zh' ? '示例' : 'demo'
-    const sample = payload?.kind === 'text'
+    const ex = payload?.kind === 'example' ? (examplesFor(c)[payload.persona] || [])[Number(payload.index) || 0] : ''
+    if (payload?.kind === 'example' && !ex) return { ok: false, error: { code: 'voice/no-example' } }
+    const sample = payload?.kind === 'example'
+      ? ['--style', 'raw', '--no-banner', ex]
+      : payload?.kind === 'text'
       ? ['--style', 'raw', '--no-banner', text || TEST[c.lang]]
       : payload?.kind === 'code'
       ? ['--from', 'dsh', '--project', project, '--code', '4821', '--repeat', '1']
@@ -323,7 +438,9 @@ async function dispatch(ctx, endpoint, payload) {
     rmSync(`${STATE}/stop`, { force: true }) // 同一秒内的 stop 会让新播报直接退出
     rmSync(`${STATE}/result`, { force: true })
     lastTestAt = Date.now()
-    const child = spawn(SCRIPT, sample, { detached: true, stdio: 'ignore', env: { ...process.env, VA_CFG_APPROVAL_FORCE: '1', VA_DEDUPE: '0' } })
+    // 试听不走离开检测，马上念；用固定句子，命中预先生成好的音频，点了就播
+    const env = { ...process.env, VA_CFG_APPROVAL_FORCE: '1', VA_DEDUPE: '0', VA_NO_NAG: '1' }
+    const child = spawn(SCRIPT, sample, { detached: true, stdio: 'ignore', env })
     child.on('error', () => {}); child.unref()
     return { ok: true, value: null }
   }
@@ -402,9 +519,13 @@ export function apply(ctx) {
 
   rmSync(LEGACY_TOKEN_FILE, { force: true })
   syncDshKey(ctx)
+  // 启动后补齐试听音频（已有的会跳过）
+  ctx.effect(() => { const id = setTimeout(() => schedulePrepare(ctx), 5000); return () => clearTimeout(id) })
   ctx.on('credentials/reference-updated', (ref) => { if (String(ref) === DSH_KEY_REF) syncDshKey(ctx) })
 
   ctx.on('session/event', (session, event) => {
+    // 批准在 DSH 里处理掉了：结束 DSH 的离开循环，别再喊
+    if (event?.type === 'approval/decided') { run(['resolve', 'dsh'], false).catch(() => {}); return }
     if (event?.type !== 'approval/asked') return
     const project = projectOf(session)
     const args = ['--from', 'dsh', '--approve', '']

@@ -36,6 +36,8 @@ dsh plugin --profile desktop add github:Venompool888/dsh-plugin-voice-alert
     - 注意：DSH 的账号登录不能用于语音合成，DeepSeek 的语音接口只认 API key。
   - macOS 本地语音：系统自带，不联网、不花钱。云端失败时自动改用本地语音。
 - **10 种播报语言**：中文、English、日本語、한국어、Français、Deutsch、Español、Português、Italiano、Русский。
+- **离开检测**：键盘鼠标 30 秒没动才开口，你在电脑前时只响提示音、弹通知；之后每 30 秒喊一次（5 次后改为每 2 分钟），动一下键盘或鼠标就停，最多 20 分钟。DSH 里的批准一处理掉也会马上停。读的是 macOS 自带的空闲时间，不需要任何权限。
+- **AI 现写、可选语气**：每次喊的话由 AI 用你的 DeepSeek key 现写，可选专业、傲娇、可爱、撒娇、冷漠或自定义语气；验证码数字照常逐位念，生成失败时用固定句子。
 - **待命模式**：跟 AI 说「我去吃饭了」「帮我盯着」，长任务结束也会喊；说「我回来了」就只在需要你动手时喊。
 - 可调：提示音、通知横幅、播报时自动调大音量、同一句话多少秒内不重复。
 
@@ -93,6 +95,8 @@ It speaks right away: with no cloud credential it uses the macOS local voice. In
 - **Speaks when approval is needed.** It only announces; it never approves anything for you.
 - **A `voice-alert` skill**, so the AI can speak up for verification codes, finished long tasks, or when it's stuck.
 - **Two voices:** DeepSeek cloud voice (default — pick a provider: **DeepSeek official** needs only an API key from platform.deepseek.com, and reuses the DeepSeek key already set in DSH Settings → Models if there is one; **Third-party** takes the base URL and key of a DeepSeek-compatible service, called at `<base URL>/v1/tools/tts`. Signing in to DSH does not cover speech: DeepSeek's speech endpoint only accepts API keys) and the macOS local voice (offline, free, used automatically if the cloud fails).
+- **Idle detection:** speaks only after 30 seconds without keyboard or mouse input (otherwise just a chime and a notification), repeats every 30 seconds (every 2 minutes after 5 calls), and stops the moment you touch the keyboard or mouse, after 20 minutes at most, or when the DSH approval is handled. Uses macOS's own idle time; no permissions needed.
+- **AI-written lines in a chosen tone:** professional, tsundere, cute, clingy, cold or a custom persona, written with your DeepSeek key; verification code digits are still read one by one, and a fixed sentence is used if generation fails.
 - **10 spoken languages.** **Away mode** for announcing finished tasks while you're gone.
 
 ### Requirements

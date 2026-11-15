@@ -6,14 +6,29 @@
   const SECTION_ID = "voice-alert";
   const RPC_CHANNEL = "/voice-alert";
   // 和 package.json 的 version 保持一致；后台 config.get 回报的 hostVersion 对不上就提示重启
-  const VERSION = "1.2.0";
+  const VERSION = "1.3.4";
 
   const zh = {
     voice: "语音",
     intro: "设置语音提醒的声音和行为。DSH、Claude Code、Codex 共用这一份设置。",
     "sec.speech": "播报",
     "sec.alerts": "什么时候出声",
-    "sec.watch": "待命模式",
+    "sec.idle": "离开电脑时",
+    idleNag: "离开电脑时反复喊我",
+    "idleNag.hint": "键盘鼠标 30 秒没动才出声；在电脑前时只响提示音、弹通知。每 30 秒喊一次（5 次后改为每 2 分钟），动一下键盘或鼠标就停，最多 20 分钟。",
+    aiLines: "每次让 AI 换个说法",
+    "aiLines.hint": "用你的 DeepSeek key 现写一句（验证码数字照常逐位念）。生成失败时用固定句子。",
+    persona: "说话语气",
+    "persona.pro": "专业", "persona.tsundere": "傲娇", "persona.cute": "可爱", "persona.clingy": "撒娇", "persona.cold": "冷漠", "persona.custom": "自定义",
+    "persona.examples": "示例（点蓝色播放按钮试听；实际播报时 AI 每次会换说法）",
+    "persona.examples.pending": "正在让 AI 写示例…",
+    "preview.ready": "试听音频已准备好，点击即可播放。",
+    "preview.running": "正在生成试听音频 {0}…",
+    "preview.nokey": "填好 key 后会自动生成所有试听音频。",
+    "preview.partial": "部分试听音频没生成成功，点播放时会现场生成。",
+    "persona.custom.placeholder": "描述你想要的语气，例如：像个老管家，称呼我少爷",
+    "persona.needKey": "需要先在上面填好 DeepSeek key，AI 才能现写句子。",
+    "sec.watch": "我不在电脑前",
     lang: "播报语言",
     "lang.hint": "「来自 Claude Code，某某项目」等固定用语和本地音色都跟随这里。",
     "engine.deepseek": "DeepSeek 云端",
@@ -74,6 +89,9 @@
     sayVoice: "本地音色",
     "sayVoice.auto": "自动",
     rate: "本地语速",
+    cloudRate: "语速",
+    "cloudRate.hint": "播放时调速，只改快慢不改音调。",
+    "cloudRate.reset": "恢复正常",
     "rate.hint": "只对 macOS 本地语音有效。",
     approval: "等你批准时提醒",
     "approval.hint": "弹出批准或授权时自动念「某某项目需要你批准」。",
@@ -84,10 +102,11 @@
     "dedupe.hint": "这段时间内已经播过就不再插播；验证码和批准不受限制。",
     sec: "{0} 秒",
     off: "关",
-    watch: "待命中",
-    "watch.hint": "开着时，长任务结束也会出声。你说「我回来了」时 AI 会关掉。",
-    "watch.left": "还剩 {0} 分钟",
-    watchHours: "默认待命时长",
+    watch: "长任务跑完也喊我",
+    "watch.hint": "平时只在需要你动手时出声（批准、验证码、AI 卡住）。打开后，长任务跑完也会喊你。",
+    "watch.left": "已打开，{0} 分钟后自动关闭。你跟 AI 说「我回来了」也会关掉。",
+    watchHours: "多久后自动关闭",
+    "watchHours.hint": "防止忘了关，回来后还一直喊。",
     hours: "{0} 小时",
     "test.approve": "试听：批准提醒",
     "test.code": "试听：验证码",
@@ -102,7 +121,22 @@
     intro: "Sound and behavior of voice alerts. Shared by DSH, Claude Code and Codex.",
     "sec.speech": "Speech",
     "sec.alerts": "When to speak",
-    "sec.watch": "Away mode",
+    "sec.idle": "When I step away",
+    idleNag: "Keep calling me when I'm away",
+    "idleNag.hint": "Speaks only after 30 seconds without keyboard or mouse input; while you're at the computer it just chimes and shows a notification. Repeats every 30 seconds (every 2 minutes after 5 calls), stops as soon as you touch the keyboard or mouse, for at most 20 minutes.",
+    aiLines: "Let the AI vary the wording",
+    "aiLines.hint": "Writes each line with your DeepSeek key (verification code digits are still read one by one). Falls back to a fixed sentence if generation fails.",
+    persona: "Tone",
+    "persona.pro": "Professional", "persona.tsundere": "Tsundere", "persona.cute": "Cute", "persona.clingy": "Clingy", "persona.cold": "Cold", "persona.custom": "Custom",
+    "persona.examples": "Examples (click the blue play button to hear them; real alerts are reworded by the AI each time)",
+    "persona.examples.pending": "Asking the AI to write examples…",
+    "preview.ready": "Preview audio is ready — plays instantly.",
+    "preview.running": "Generating preview audio {0}…",
+    "preview.nokey": "All preview audio is generated automatically once a key is set.",
+    "preview.partial": "Some preview audio couldn't be generated; it will be made when you play it.",
+    "persona.custom.placeholder": "Describe the tone you want, e.g. an old butler who calls me 'young master'",
+    "persona.needKey": "Add a DeepSeek key above first so the AI can write the lines.",
+    "sec.watch": "When I'm away",
     lang: "Spoken language",
     "lang.hint": "Fixed phrases such as “From Claude Code, project X” and local voices follow this setting.",
     "engine.deepseek": "DeepSeek cloud",
@@ -163,6 +197,9 @@
     sayVoice: "Local voice",
     "sayVoice.auto": "Automatic",
     rate: "Local speaking rate",
+    cloudRate: "Speed",
+    "cloudRate.hint": "Changes speed at playback without changing pitch.",
+    "cloudRate.reset": "Reset",
     "rate.hint": "Only affects the macOS local voice.",
     approval: "Speak when approval is needed",
     "approval.hint": "Says “project X needs your approval” when an approval or permission prompt appears.",
@@ -173,10 +210,11 @@
     "dedupe.hint": "Skip an alert if one played within this window; codes and approvals always play.",
     sec: "{0} s",
     off: "Off",
-    watch: "Away mode on",
-    "watch.hint": "While on, finished long tasks are announced too. The AI turns it off when you say you're back.",
-    "watch.left": "{0} min left",
-    watchHours: "Default duration",
+    watch: "Also announce finished long tasks",
+    "watch.hint": "Normally it speaks only when you need to act (approval, a verification code, the AI is stuck). Turn this on to also hear when long tasks finish.",
+    "watch.left": "On — turns off automatically in {0} min, or when you tell the AI you're back.",
+    watchHours: "Turn off automatically after",
+    "watchHours.hint": "So it doesn't keep announcing after you're back.",
     hours: "{0} h",
     "test.approve": "Preview: approval",
     "test.code": "Preview: code",
@@ -203,9 +241,10 @@
 .va-seg button:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .va-seg button.is-on{background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
 .va-seg button:focus-visible,.va-switch:focus-visible,.va-btn:focus-visible,.va-select:focus-visible{outline:2px solid var(--dsw-focus-ring-color);outline-offset:2px}
-.va-switch{all:unset;cursor:pointer;flex-shrink:0;width:40px;height:24px;border-radius:12px;background:var(--dsw-alias-border-l3);position:relative;transition:background .15s}
-.va-switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s}
-.va-switch.is-on{background:var(--dsw-alias-button-primary-fill)}
+.va-switch{all:unset;cursor:pointer;flex-shrink:0;width:40px;height:24px;border-radius:12px;background:var(--dsw-alias-border-l3,#5a5a5e);box-shadow:inset 0 0 0 1px rgba(0,0,0,.12);position:relative;transition:background .15s}
+.va-switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--dsw-alias-switch-thumb,#fff);box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .15s}
+/* 打开用 DSH 品牌蓝：深色主题的主按钮色是白色，跟白色圆点混在一起看不出开关 */
+.va-switch.is-on{background:var(--dsw-alias-brand-primary,#4d6bfe);box-shadow:none}
 .va-switch.is-on::after{transform:translateX(16px)}
 .va-select{flex-shrink:0;max-width:240px;padding:6px 10px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2,transparent);color:inherit;font:inherit;font-size:13px}
 .va-range{display:flex;align-items:center;gap:10px;flex-shrink:0}
@@ -231,6 +270,21 @@
 .va-btn[disabled]{opacity:.5;cursor:default}
 .va-toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:1000;display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;background:var(--dsw-alias-bg-layer-2,#2c2c2e);border:1px solid var(--dsw-alias-border-l2);box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:14px;animation:va-toast .22s ease-out}
 @keyframes va-toast{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+.va-personas{display:flex;flex-wrap:wrap;gap:8px}
+.va-chip{all:unset;cursor:pointer;padding:6px 14px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);font-size:13px}
+.va-chip.is-on{background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground,#fff);border-color:transparent}
+.va-examples{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:var(--dsw-radius-sm,8px);background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.08))}
+.va-examples-title{font-size:12px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.va-examples p{margin:0;font-size:13px;line-height:1.5}
+.va-example{all:unset;cursor:pointer;display:flex;gap:10px;align-items:center;padding:5px 8px;margin:0 -8px;border-radius:8px;font-size:13px;line-height:1.5}
+.va-example:hover:not([disabled]){background:rgba(127,127,127,.12)}
+.va-example:hover:not([disabled]) .va-play{transform:scale(1.08)}
+.va-example:focus-visible{outline:2px solid #4d6bfe;outline-offset:1px}
+.va-example[disabled]{cursor:not-allowed;opacity:.55}
+.va-example[disabled] .va-play{background:#8a8a8f}
+.va-play{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#4d6bfe;color:#fff;font-size:10px;line-height:1;padding-left:2px;box-sizing:border-box;transition:transform .12s}
+.va-pv{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.va-pv .va-mark{width:14px;height:14px;font-size:9px;background:#1f9d55}
 .va-btn.is-danger{color:#d93a3a;border-color:#d93a3a}
 .va-row.is-stack{flex-direction:column;align-items:stretch;gap:10px}
 .va-row.is-stack .va-inline{justify-content:flex-start;width:100%}
@@ -248,7 +302,7 @@
 .va-badge{font-size:11px;font-weight:500;padding:1px 7px;border-radius:999px;border:1px solid var(--dsw-alias-border-l3);color:var(--dsw-alias-label-secondary)}
 .va-live{display:flex;align-items:center;gap:10px;padding:0 18px 14px;margin-top:-4px;font-size:13px;color:var(--dsw-alias-label-secondary)}
 .va-actions .va-live{padding:0;margin:0}
-.va-spin{width:14px;height:14px;box-sizing:border-box;border:2px solid var(--dsw-alias-border-l3);border-top-color:var(--dsw-alias-button-primary-fill);border-radius:50%;animation:va-spin .8s linear infinite}
+.va-spin{width:14px;height:14px;box-sizing:border-box;border:2px solid var(--dsw-alias-border-l3);border-top-color:#4d6bfe;border-radius:50%;animation:va-spin .8s linear infinite}
 .va-wave{display:inline-flex;gap:3px;align-items:center;height:16px}
 .va-wave i{display:block;width:3px;height:100%;border-radius:2px;background:var(--dsw-alias-button-primary-fill);transform:scaleY(.3);animation:va-wave 1s ease-in-out infinite}
 .va-wave i:nth-child(2){animation-delay:-.75s}.va-wave i:nth-child(3){animation-delay:-.5s}.va-wave i:nth-child(4){animation-delay:-.25s}.va-wave i:nth-child(5){animation-delay:-.6s}
@@ -305,6 +359,16 @@
         const [keyEditing, setKeyEditing] = useState(false); // 已有 key 时点了「更换」
         const [keyBusy, setKeyBusy] = useState(false);
         const [toast, setToast] = useState("");
+        const [personaDraft, setPersonaDraft] = useState(null);
+        // 试听音频在后台生成时，每 1.5 秒刷新一次进度和示例
+        const pvRunning = state?.preview?.state === "running";
+        // 改了会影响试听音频的设置、或 key 测通后，后台会开始生成：稍后查一次，进入轮询
+        const kickPreview = () => setTimeout(() => { call("preview.status").then((v) => setState((s) => ({ ...s, preview: v.preview, examples: v.examples })), () => {}); }, 400);
+        useEffect(() => {
+          if (!pvRunning) return;
+          const id = setInterval(() => { call("preview.status").then((v) => setState((s) => ({ ...s, preview: v.preview, examples: v.examples })), () => {}); }, 1500);
+          return () => clearInterval(id);
+        }, [pvRunning]);
         useEffect(() => { if (!toast) return; const id = setTimeout(() => setToast(""), 2600); return () => clearTimeout(id); }, [toast]);
         const [baseDraft, setBaseDraft] = useState(null); // null = 没在编辑，显示已保存的值
         const [baseMsg, setBaseMsg] = useState("");
@@ -337,7 +401,7 @@
           clearTimeout(saveTimer.current);
           saveTimer.current = setTimeout(() => {
             call("config.set", patch).then(
-              (v) => { setState((s) => ({ ...s, config: v.config })); setStatus(t("saved")); },
+              (v) => { setState((s) => ({ ...s, config: v.config })); setStatus(t("saved")); kickPreview(); },
               () => setStatus(t("err.save")));
           }, 250);
         };
@@ -351,7 +415,7 @@
             setKeyBusy(false);
             setState((s) => ({ ...s, keys: v.keys }));
             const r = v.result;
-            if (r.ok) { setKeyDraft(""); setKeyEditing(false); setToast(t("key.toast.ok")); return; }
+            if (r.ok) { setKeyDraft(""); setKeyEditing(false); setToast(t("key.toast.ok")); kickPreview(); return; }
             const id = !key && r.reason === "auth" ? "key.err.test.auth" : (ERR[r.reason] || "key.err.network");
             setKeyMsg(fmt(t(id), r.status ?? ""));
           }, () => { setKeyBusy(false); setKeyMsg(t("key.err.network")); });
@@ -424,6 +488,14 @@
 
         const c = { provider: "official", baseUrl: "", ...state.config };
         const keys = state.keys ?? { official: { source: null }, custom: { source: null } };
+        const hasAnyKey = !!(c.provider === "custom" ? keys.custom.source && c.baseUrl : keys.official.source);
+        const PERSONAS = ["pro", "tsundere", "cute", "clingy", "cold", "custom"];
+        const examples = (state.examples || {})[c.persona || "pro"] || [];
+        const pv = state.preview || { state: "idle" };
+        const previewNote = pv.state === "running" ? h("span", { className: "va-pv" }, h("span", { className: "va-spin", "aria-hidden": true }), fmt(t("preview.running"), pv.total ? `${pv.done}/${pv.total}` : ""))
+          : pv.state === "ready" ? h("span", { className: "va-pv" }, h("span", { className: "va-mark", "aria-hidden": true }, "✓"), t("preview.ready"))
+          : !hasAnyKey || pv.state === "nokey" ? h("span", { className: "va-pv" }, t("preview.nokey"))
+          : pv.state === "partial" ? h("span", { className: "va-pv" }, t("preview.partial")) : null;
         const stale = state.hostVersion !== VERSION;
         const mac = state.platform === "darwin";
         const canPlay = mac && !stale; // 旧后台没有播放状态接口，先不让试听
@@ -470,7 +542,12 @@
               keyEditing ? h("button", { type: "button", className: "va-btn", disabled: keyBusy, onClick: () => { setKeyEditing(false); setKeyDraft(""); setKeyMsg(""); } }, t("key.cancel")) : null),
             keyMsg ? h("div", { className: "va-keyerr", role: "alert" }, keyMsg) : null),
           h(Row, { title: t("voiceId") },
-            h(Seg, { value: c.voiceId, options: [["stella", "Stella"], ["tide", "Tide"]], onChange: (voiceId) => set({ voiceId }) })));
+            h(Seg, { value: c.voiceId, options: [["stella", "Stella"], ["tide", "Tide"]], onChange: (voiceId) => set({ voiceId }) })),
+          h(Row, { title: t("cloudRate"), hint: t("cloudRate.hint") },
+            h("div", { className: "va-range" },
+              h("input", { type: "range", min: 0.7, max: 1.6, step: 0.05, value: c.cloudRate ?? 1, "aria-label": t("cloudRate"), onChange: (e) => set({ cloudRate: Number(e.target.value) }) }),
+              h("span", { style: { minWidth: 44, textAlign: "right" } }, (c.cloudRate ?? 1).toFixed(2).replace(/0$/, "") + "×"),
+              (c.cloudRate ?? 1) !== 1 ? h("button", { type: "button", className: "va-btn", onClick: () => set({ cloudRate: 1 }) }, t("cloudRate.reset")) : null)));
 
         const localPane = h("div", { className: "va-card", role: "tabpanel", id: "va-pane-local", "aria-labelledby": "va-tab-local" },
           h(Row, { title: t("sayVoice") },
@@ -521,11 +598,32 @@
                 h("select", { className: "va-select", value: String(c.dedupe), onChange: (e) => set({ dedupe: Number(e.target.value) }) },
                   [0, 10, 20, 30, 60, 120].map((s) => h("option", { key: s, value: String(s) }, s === 0 ? t("off") : fmt(t("sec"), s))))))),
 
+          !mac ? null : h("div", null, h("h3", { className: "va-section-title" }, t("sec.idle")),
+            h("div", { className: "va-card" },
+              h(Row, { title: t("idleNag"), hint: t("idleNag.hint") },
+                h(Switch, { value: c.idleNag !== false, label: t("idleNag"), onChange: (v) => set({ idleNag: v }) })),
+              h(Row, { title: t("aiLines"), hint: !hasAnyKey && c.aiLines !== false ? t("persona.needKey") : t("aiLines.hint") },
+                h(Switch, { value: c.aiLines !== false, label: t("aiLines"), onChange: (v) => set({ aiLines: v }) })),
+              c.aiLines === false ? null : h(Row, { title: t("persona"), stack: true },
+                h("div", { className: "va-personas", role: "radiogroup", "aria-label": t("persona") },
+                  PERSONAS.map((p) => h("button", { key: p, type: "button", role: "radio", "aria-checked": (c.persona || "pro") === p,
+                    className: "va-chip" + ((c.persona || "pro") === p ? " is-on" : ""), onClick: () => set({ persona: p }) }, t("persona." + p)))),
+                (c.persona || "pro") === "custom"
+                  ? h("input", { className: "va-input", maxLength: 200, value: personaDraft ?? (c.personaCustom || ""), placeholder: t("persona.custom.placeholder"), "aria-label": t("persona.custom"),
+                      onChange: (e) => setPersonaDraft(e.target.value), onBlur: () => { if (personaDraft !== null) { set({ personaCustom: personaDraft }); setPersonaDraft(null); } } })
+                  : null,
+                h("div", { className: "va-examples" }, h("span", { className: "va-examples-title" }, t("persona.examples")),
+                  examples.length === 0
+                    ? h("p", { className: "va-pv" }, hasAnyKey ? h(React.Fragment, null, h("span", { className: "va-spin", "aria-hidden": true }), t("persona.examples.pending")) : t("persona.needKey"))
+                    : examples.map((x, i) => h("button", { key: i, type: "button", className: "va-example", disabled: !canPlay || busy || !hasAnyKey, onClick: () => play({ kind: "example", persona: c.persona || "pro", index: i }) },
+                        h("span", { className: "va-play", "aria-hidden": true }, "▶"), h("span", null, x)))),
+                previewNote))),
+
           h("div", null, h("h3", { className: "va-section-title" }, t("sec.watch")),
             h("div", { className: "va-card" },
               h(Row, { title: t("watch"), hint: state.watch.on ? fmt(t("watch.left"), minsLeft) : t("watch.hint") },
                 h(Switch, { value: state.watch.on, label: t("watch"), onChange: setWatch })),
-              h(Row, { title: t("watchHours") },
+              h(Row, { title: t("watchHours"), hint: t("watchHours.hint") },
                 h("select", { className: "va-select", value: String(c.watchHours), onChange: (e) => set({ watchHours: Number(e.target.value) }) },
                   [1, 2, 4, 8, 12].map((n) => h("option", { key: n, value: String(n) }, fmt(t("hours"), n))))))),
 

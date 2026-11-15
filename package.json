@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-voice-alert",
-  "version": "1.2.0",
+  "version": "1.3.4",
   "description": "Voice alerts for DeepSeek Harness (DSH): speaks up when a session needs your approval, a verification code, or a long task finishes. Settings → Voice to pick voice, language and engine.",
   "keywords": [
     "dsh",
@@ -34,6 +34,7 @@
     "client.js",
     "bin/voice-alert",
     "bin/va-tts.mjs",
+    "bin/va-line.mjs",
     "LICENSE"
   ],
   "dsh": {
